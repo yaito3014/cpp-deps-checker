@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 4.2)
+project(definition_order_late LANGUAGES NONE)
+add_library(base INTERFACE)
+add_library(a INTERFACE)
+target_link_libraries(a INTERFACE base late)
+add_subdirectory(late)

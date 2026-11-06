@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 4.2)
+project(definition_order_imported LANGUAGES NONE)
+add_library(a INTERFACE)
+target_link_libraries(a INTERFACE ext::x)
+add_library(ext::x INTERFACE IMPORTED)
