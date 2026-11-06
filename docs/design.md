@@ -16,9 +16,9 @@ Seven rules fail the check, one only warns, and two produce output. Every violat
 
 | # | Rule | What is checked | Level |
 | --- | --- | --- | --- |
-| 1 | No cycles | SCC search over direct link edges (`linkLibraries`, all visibilities) | error |
+| 1 | No cycles | SCC search over declared edges (defined below) | error |
 | 2 | Definition order | For every edge T1 -> T2, the `add_library`/`add_executable` of T2 runs before that of T1, by trace order. Imported targets are exempt | error |
-| 3 | Direct layering | A header owned by T1 that includes a header owned by T2 != T1 requires T2 in `linkLibraries(T1)`. If the includer is a public header of T1, T2 must also be in `interfaceCompileDependencies(T1)`. Includes of imported targets' headers need a declared link too | error |
+| 3 | Direct layering | A file owned by T1 (source or header) that includes a header owned by T2 != T1 requires T2 in `compileDependencies(T1)` if the includer is a source or private header, and in `interfaceCompileDependencies(T1)` if it is a public header. INTERFACE libraries have only public headers. Includes of imported targets' headers need a declared link too | error |
 | 4 | Entry point only | T2's `detail/` headers are included only by T2's own headers and by test targets. T2's private headers are included only by T2's own files | error |
 | 5 | Nesting is privacy | A target nested under parent P is consumed only from inside P's subtree. An outside consumer fails with a "hoist: private detail is becoming shared API" message | error |
 | 6 | Placement | A target placed above the lowest common ancestor of its consumers (dominator tree over the production graph, rooted at the composition roots) | warning |
@@ -28,6 +28,7 @@ Seven rules fail the check, one only warns, and two produce output. Every violat
 
 Definitions used by the rules:
 
+- **Declared edges.** T1 -> T2 is a declared edge if T2's id appears in any of T1's `linkLibraries`, `compileDependencies`, `interfaceLinkLibraries`, or `interfaceCompileDependencies`, excluding entries that carry `fromDependency`. This matches what T1's `target_link_libraries` calls declare: edges out of INTERFACE libraries appear only in the two interface fields, `$<COMPILE_ONLY:...>` items only in the compile fields, and `$<LINK_ONLY:...>` items only in the link fields. Entries with `fromDependency` were injected by another target's `INTERFACE_LINK_LIBRARIES_DIRECT` and are not declared by T1. Non-target entries (`fragment`) are not edges.
 - **Header owner.** A header in a target's `HEADERS` file set is a public header of that target. A header in a target's sources, or under its source directory and in no file set, is a private header. Imported targets have neither in the File API reply; see Verified separately under Inputs.
 - **Parent.** A target's parent is the target defined in the nearest ancestor directory that defines one.
 - **Exceptions.** A rule may be broken only through an entry in the consumer config, and every entry must carry a `reason`.
@@ -36,9 +37,18 @@ Definitions used by the rules:
 
 The model is built from three inputs: the CMake File API for targets and edges, a CMake JSON trace for definition order, and a Clang `-H` pass for include edges.
 
-**CMake File API, codemodel v2.9 or later (CMake 4.2+).** Read these target fields: `linkLibraries` (direct edges), `interfaceCompileDependencies` (the PUBLIC/INTERFACE set), `fileSets`, `sources`, `paths.source`, and `backtraceGraph`. Read both `targets` and `abstractTargets`, because INTERFACE libraries are reported in the latter. Configure with `CMAKE_OPTIMIZE_DEPENDENCIES=OFF`, which otherwise strips dependency information from the reply. Do not use the `dependencies` field: it mixes direct and transitive edges and omits INTERFACE targets.
+**CMake File API, codemodel v2.9 or later (CMake 4.2+).** Read these target fields: `linkLibraries`, `compileDependencies`, `interfaceLinkLibraries`, and `interfaceCompileDependencies` (together the declared edges; the two compile fields also give header visibility for rule 3), `fileSets`, `sources`, `paths.source`, and `backtraceGraph`. Read both `targets` and `abstractTargets`, because imported targets and INTERFACE libraries without sources or file sets are reported in the latter. Configure with `CMAKE_OPTIMIZE_DEPENDENCIES=OFF`, which otherwise strips dependency information from the reply. Do not use the `dependencies` field: it mixes direct and transitive edges and omits INTERFACE targets.
 
-**CMake trace.** Run `cmake --trace-format=json-v1 --trace-expand --trace-redirect=<file>` and take the execution order of `add_library` and `add_executable` calls. The File API cannot supply this order: a target's backtrace starts at its own `CMakeLists.txt` with no `add_subdirectory` frame, and directory objects carry no backtrace. Drop entries from `CMakeFiles/CMakeScratch` (try_compile projects).
+The cmake-file-api(7) manual establishes, for the four dependency fields:
+
+- `linkLibraries` holds the target's `LINK_LIBRARIES` evaluated non-transitively, without `$<COMPILE_ONLY:...>` items, plus entries injected by other targets' `INTERFACE_LINK_LIBRARIES_DIRECT`, which carry `fromDependency`.
+- `compileDependencies` holds the same relationships without `$<LINK_ONLY:...>` items, with the same `fromDependency` marking.
+- `interfaceLinkLibraries` and `interfaceCompileDependencies` come from `INTERFACE_LINK_LIBRARIES`; the latter omits `$<LINK_ONLY:...>` items.
+- Each entry has exactly one of `id` (a target) or `fragment` (raw linker arguments); the compile fields have only `id`.
+
+Reply index selection, from the same manual: since CMake 4.1 a failed configure writes an `error-*.json` index and keeps the older `index-*.json`. The current index is the one with the largest name after stripping the `index-` or `error-` prefix. If it is an error index, the reply is stale and the loader must fail rather than read the older `index-*.json`.
+
+**CMake trace.** Run `cmake --trace-format=json-v1 --trace-expand --trace-redirect=<file>` and take the execution order of `add_library` and `add_executable` calls. The File API cannot supply this order: a target's backtrace starts at its own `CMakeLists.txt` with no `add_subdirectory` frame, and directory objects carry no backtrace. The trace also holds every try_compile project's configure, and a `try_compile(PROJECT ... SOURCE_DIR ...)` project is traced at its own source directory, not under `CMakeFiles/CMakeScratch`, with no field that tells it apart (verified on CMake 4.4.5). So a trace entry counts only if it matches a target's definition site from the File API: the file and line of the target's `backtrace` and the target name, compared with the entry's `file`, `line`, and first argument. `--trace-expand` is required so that a target created through a wrapper function (`add_library(${name} ...)`) carries its expanded name, and command names are compared case-insensitively because the trace keeps their spelling.
 
 **Include edges.** For each TU in `compile_commands.json`, run Clang with `-H -fshow-skipped-includes`, rebuild the include tree, and take its parent -> child edges. Without `-fshow-skipped-includes`, a header blocked by its include guard on a later include is not printed and that edge is lost. Rejected alternatives: a textual `#include` scanner (sees `#if`'d-out branches, so false positives on platform code), and Clang module maps with `-fmodules-strict-decluse` (Clang-only enforcement that cannot feed the graph output).
 
@@ -48,12 +58,18 @@ Fixture: `a` links `PRIVATE b PUBLIC c PRIVATE e`; `b` is an INTERFACE library l
 
 | Field or input | Result for `a` | Consequence |
 | --- | --- | --- |
-| `linkLibraries` | `[b, c, e]`, no `d` | Direct edges only: the manifest |
-| `interfaceLinkLibraries` | `[b, c, e]` | Includes PRIVATE deps for a static library: unusable for visibility |
+| `linkLibraries` | `[b, c, e]`, no `d` | Direct edges only, no transitive `d` |
+| `interfaceLinkLibraries` | `[b, c, e]` | Includes PRIVATE deps for a static library, as `$<LINK_ONLY:...>`: unusable for visibility |
 | `interfaceCompileDependencies` | `[c]` | Exactly the PUBLIC set: use for rule 3 |
 | `dependencies` | `[e, c]` | Omits INTERFACE `b`: unusable |
 | `abstractTargets` | holds `b`, `d` | Loader must read it |
 | Trace | `add_library(a)` at `CMakeLists.txt:6`, `add_library(e)` at `late/CMakeLists.txt:1` after it | Rule 2 violation is detectable |
+
+Re-checked on CMake 4.4.5 with the same fixture (`tests/fixtures/model_basics`):
+
+- `a`'s `INTERFACE_LINK_LIBRARIES` property is `$<LINK_ONLY:b>;c;$<LINK_ONLY:e>`, which explains the `interfaceLinkLibraries` row.
+- `a`'s `compileDependencies` is `[b, c, e]`.
+- INTERFACE library `b` has no `linkLibraries` or `compileDependencies`; its edge to `d` appears only in `interfaceLinkLibraries` and `interfaceCompileDependencies`, both `[d]`. An edge set built from `linkLibraries` alone misses every edge out of an INTERFACE library, hence the declared-edges definition under Rules.
 
 ### Verified separately (CMake 4.4.5, codemodel 2.11; Clang 23.1.6)
 
@@ -124,7 +140,7 @@ cpp_deps_checker/
   model.py      # File API reply + trace -> Model (targets, edges, file sets, definition order, backtraces)
   includes.py   # -H output per TU -> file-level include edges (path -> path), nothing about targets
   classify.py   # Model + test patterns -> header owner and kind (public/private/detail), test-target set
-  rules/        # one module per rule, each check(ctx) -> list[Violation]; __init__ owns Context, Violation, exceptions
+  rules/        # one private module per rule (_definition_order.py, ...); __init__ exports Context, Violation, check
   report.py     # text, GitHub annotations, job summary, DOT/Mermaid graph
   cli.py        # composition root: parse args, load config, build Context, run rules, report
 ```
@@ -139,16 +155,20 @@ The one design decision each module hides:
 
 Rules need more than the model: rules 3 and 4 need include edges, and rules 4 to 7 need the test-target set. The `rules` package therefore owns a frozen `Context` (model, include edges, classification) and the `Violation` type, and every rule has the signature `check(ctx: Context) -> list[Violation]`, so `cli` runs them uniformly. `cli` builds the `Context` from the outputs of `model`, `includes`, and `classify`. Exceptions from the consumer config are applied once in `rules/__init__`, after all rules run, not inside each rule.
 
+The package's only entry point is `rules.check(ctx) -> list[Violation]`, which runs every rule. Rule modules are private (`_cycles.py`, `_definition_order.py`), and `Context`, `Level`, and `Violation` live in a private `_core.py` that `__init__` re-exports, so rule modules do not import their own package's `__init__`. Tests go through `rules.check` too, which is how they assert that a fixture produces exactly one violation.
+
+The declared-edges definition is computed by the model (`Target.declared_dependencies`), because which File API fields hold edges is the model's hidden decision.
+
 Keeping `includes` free of target knowledge means replacing `-H` with another collector does not touch ownership, and changing ownership (for example for imported targets) does not touch collection.
 
 ## Implementation order
 
-Build test-first: each step starts with a fixture CMake project under `tests/fixtures/<case>/` that contains exactly one violation, and a failing test asserting the expected violation and its `file:line`.
+Build test-first: each step starts with a fixture CMake project under `tests/fixtures/<case>/` that contains exactly one violation, and a failing test asserting the expected violation and its `file:line`. The exception is a cycle: every cycle has an edge to a later-defined target, so a rule 1 fixture also violates rule 2. Graph logic that needs no CMake (larger components, acyclic graphs) is unit-tested on a hand-built `Model`.
 
 1. **Fixture harness.** Configure a fixture into a temporary build directory with the File API query and trace enabled, and return the reply paths.
-2. **Model loader.** First test reproduces the verified fixture in Inputs: `linkLibraries`, `interfaceCompileDependencies`, and `abstractTargets` behave as recorded there.
-3. **Rule 2, definition order.** Fixture: a dependency defined in a later `add_subdirectory` than its consumer. Expect one error at the consumer's link.
-4. **Rule 1, cycles.** Fixture: two static libraries linking each other.
+2. **Model loader.** First test reproduces the verified fixture in Inputs: the four dependency fields and `abstractTargets` behave as recorded there, including INTERFACE library `b`'s edge to `d`. Then: an `error-*.json` index newer than the `index-*.json` makes the loader fail.
+3. **Rule 2, definition order.** Fixture: a dependency defined in a later `add_subdirectory` than its consumer. Expect one error at the consumer's link. Also: an imported dependency defined after its consumer (clean), and model fixtures for trace matching (a try_compile project defining a same-named target, an upper-case `ADD_LIBRARY`, a wrapper function).
+4. **Rule 1, cycles.** Fixture: two static libraries linking each other; expect the cycle and the rule 2 error at the same link. One violation per strongly connected component, with the shortest cycle through its first member in the message. Self-loops need no handling: CMake rejects a non-INTERFACE target linking itself and drops an INTERFACE library's self-link from the reply (verified on CMake 4.4.5).
 5. **Include collection, header classification, and rule 3.** Fixtures: a header including a transitive-only dependency (error); a public header including a PRIVATE-linked dependency (error); the same with PUBLIC (clean). Imported-target fixtures wait for the ownership decision below.
 6. **Test classification, rule 4, and rule 7.** Fixtures: a non-test target including another target's `detail/` header (error); a test doing the same (clean); a test including a private header (error); a production target linking a test helper (error).
 7. **Rules 5 and 6.** Fixtures: a nested target consumed from outside its parent (error); a target placed above its consumers' common ancestor (warning, exit code 0).
@@ -160,9 +180,7 @@ The tool's own tests use pytest.
 
 These claims are approximate until checked, most of them in step 2 or step 5:
 
-- `linkLibraries` holds exactly the direct `target_link_libraries` entries. Verified on one five-target fixture, not against the cmake-file-api manual.
-- `CMAKE_OPTIMIZE_DEPENDENCIES=ON` is known to strip `dependencies`; whether it also affects `linkLibraries` is unknown.
-- Why `interfaceLinkLibraries` lists PRIVATE deps for a static library (likely link-only propagation) is inferred, not checked.
+- `CMAKE_OPTIMIZE_DEPENDENCIES=ON` is known to strip `dependencies`; whether it also affects the four dependency fields is unknown.
 - Generated headers may require a build before the `-H` pass can preprocess every TU.
 
 Open decisions:
