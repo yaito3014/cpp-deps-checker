@@ -190,7 +190,7 @@ Open decisions:
 - [ ] One feature target per directory is assumed by the parent definition; projects with several targets per directory need a rule.
 - [ ] Multi-config generators: which configuration the check reads.
 - [ ] Owner of an imported target's headers (rule 3). The reply has no include directories for imported targets. Candidates: (a) inject a script through `CMAKE_PROJECT_INCLUDE` that walks the directories' `IMPORTED_TARGETS` and writes each target's `INTERFACE_INCLUDE_DIRECTORIES` with `file(GENERATE)`, a fourth input, unverified; (b) match consumer `compileGroups` include paths to `linkLibraries` entries by backtrace, ambiguous when one call links several imported targets; (c) drop imported targets from rule 3.
-- [ ] Type checker for the tool itself (mypy, pyright, or other).
+- [x] Type checker for the tool itself: ty.
 
 ## Sources
 
