@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 4.2)
+project(cycles_static_pair LANGUAGES CXX)
+add_library(a STATIC a.cpp)
+add_library(b STATIC b.cpp)
+target_link_libraries(a PRIVATE b)
+target_link_libraries(b PRIVATE a)
