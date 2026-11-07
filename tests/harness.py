@@ -37,6 +37,7 @@ def configure(source_dir: Path, build_dir: Path, *cmake_args: str) -> Build:
             "-DCMAKE_CXX_COMPILER=clang++",
             "-DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=ON",
             "-DCMAKE_OPTIMIZE_DEPENDENCIES:BOOL=OFF",
+            "-DCMAKE_VERIFY_INTERFACE_HEADER_SETS:BOOL=ON",
             "--trace-format=json-v1",
             "--trace-expand",
             f"--trace-redirect={trace}",

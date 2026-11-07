@@ -31,18 +31,29 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def context(build_dir: Path, trace: Path, compile_commands: Path | None) -> Context:
-    """Every rule's input; without compile_commands there are no include edges."""
+    """Every rule's input; without compile_commands there are no include edges.
+
+    A translation unit that fails to preprocess is a violation if it verifies
+    a header set, and unusable input otherwise.
+    """
     model = load(build_dir, trace)
     owners = classify(model)
     if compile_commands is None:
-        return Context(model=model, includes=(), owners=owners)
+        return Context(model=model, includes=(), failures=(), owners=owners)
     collection = collect(
         compile_commands, keep=lambda path: owners.of(path) is not None
     )
-    if collection.failures:
-        failure = collection.failures[0]
-        raise IncludeError(f"preprocessing {failure.source} failed:\n{failure.output}")
-    return Context(model=model, includes=collection.includes, owners=owners)
+    for failure in collection.failures:
+        if model.verified_target(failure.source) is None:
+            raise IncludeError(
+                f"preprocessing {failure.source} failed:\n{failure.output}"
+            )
+    return Context(
+        model=model,
+        includes=collection.includes,
+        failures=collection.failures,
+        owners=owners,
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:

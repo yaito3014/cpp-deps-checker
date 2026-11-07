@@ -58,14 +58,21 @@ def public_private(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def test_collect_runs_every_translation_unit(public_private: Path) -> None:
     root = (FIXTURES / "direct_layering_public_private").resolve()
     a_cpp, a_hpp = root / "a/a.cpp", root / "a/include/a/a.hpp"
+    c_hpp = root / "c/include/c/c.hpp"
+    build = public_private.resolve()
+    verify_a = build / "a/a_verify_interface_header_sets/a/a.hpp.cxx"
+    verify_c = build / "c/c_verify_interface_header_sets/c/c.hpp.cxx"
 
     collection = collect(public_private / "compile_commands.json", keep=lambda _: True)
 
     assert set(collection.includes) == {
         Include(a_cpp, a_hpp, 1),
-        Include(a_hpp, root / "c/include/c/c.hpp", 3),
+        Include(a_hpp, c_hpp, 3),
+        Include(verify_a, a_hpp, 2),
+        Include(verify_c, c_hpp, 2),
     }
-    assert collection.failures == ()
+    # a links c PRIVATE, so a's verification lacks c's include directory.
+    assert [failure.source for failure in collection.failures] == [verify_a]
 
 
 def test_collect_keeps_only_requested_includers(public_private: Path) -> None:

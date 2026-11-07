@@ -32,7 +32,14 @@ def basics(tmp_path_factory: pytest.TempPathFactory) -> Model:
 
 
 def test_targets_and_abstract_targets_are_loaded(basics: Model) -> None:
-    assert {t.name for t in basics.targets.values()} == {"a", "b", "c", "d", "e"}
+    declared = {"a", "b", "c", "d", "e"}
+    # Header set verification, which the harness enables, adds one target per
+    # declared target and two aggregates.
+    assert {t.name for t in basics.targets.values()} == (
+        declared
+        | {f"{name}_verify_interface_header_sets" for name in declared}
+        | {"all_verify_header_sets", "all_verify_interface_header_sets"}
+    )
     assert _target(basics, "b").type == "INTERFACE_LIBRARY"
 
 
@@ -129,9 +136,7 @@ def test_missing_reply_is_reported(tmp_path: Path) -> None:
 @pytest.fixture(scope="module")
 def public_private(tmp_path_factory: pytest.TempPathFactory) -> Model:
     build = configure(
-        FIXTURES / "direct_layering_public_private",
-        tmp_path_factory.mktemp("build"),
-        "-DCMAKE_VERIFY_INTERFACE_HEADER_SETS:BOOL=ON",
+        FIXTURES / "direct_layering_public_private", tmp_path_factory.mktemp("build")
     )
     return load(build.dir, build.trace)
 

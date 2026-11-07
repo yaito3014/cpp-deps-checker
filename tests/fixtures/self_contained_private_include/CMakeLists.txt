@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 4.2)
+project(self_contained_private_include LANGUAGES CXX)
+add_library(a STATIC src/a.cpp)
+target_sources(a PUBLIC FILE_SET HEADERS BASE_DIRS include FILES include/a/a.hpp)
+target_include_directories(a PRIVATE src)

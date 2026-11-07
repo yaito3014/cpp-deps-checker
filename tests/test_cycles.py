@@ -11,7 +11,7 @@ from tests.harness import check_fixture, summary
 def _check(edges: dict[str, list[str]]) -> list[Violation]:
     """Violations of a model whose targets declare only the given edges."""
     model = factories.model(*(target(n, links=ts) for n, ts in edges.items()))
-    return check(Context(model=model, includes=(), owners=classify(model)))
+    return check(Context(model=model, includes=(), failures=(), owners=classify(model)))
 
 
 def test_static_libraries_linking_each_other(tmp_path: Path) -> None:

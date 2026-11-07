@@ -25,3 +25,4 @@ def test_configure_produces_codemodel_trace_and_compile_commands(
 
     cache = (build.dir / "CMakeCache.txt").read_text()
     assert "CMAKE_OPTIMIZE_DEPENDENCIES:BOOL=OFF" in cache
+    assert "CMAKE_VERIFY_INTERFACE_HEADER_SETS:BOOL=ON" in cache
