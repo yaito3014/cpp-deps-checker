@@ -124,3 +124,45 @@ def test_imported_targets_are_marked(definitions: Model) -> None:
 def test_missing_reply_is_reported(tmp_path: Path) -> None:
     with pytest.raises(MissingReplyError, match="no File API reply"):
         load(tmp_path, tmp_path / "trace.json")
+
+
+@pytest.fixture(scope="module")
+def public_private(tmp_path_factory: pytest.TempPathFactory) -> Model:
+    build = configure(
+        FIXTURES / "direct_layering_public_private", tmp_path_factory.mktemp("build")
+    )
+    return load(build.dir, build.trace)
+
+
+def test_files_of_a_built_target(public_private: Model) -> None:
+    root = (FIXTURES / "direct_layering_public_private").resolve()
+    a = _target(public_private, "a")
+
+    assert public_private.source_dir == root
+    assert a.source_dir == root / "a"
+    assert a.sources == (root / "a" / "a.cpp",)
+    (headers,) = a.file_sets
+    assert (headers.type, headers.visibility) == ("HEADERS", "PUBLIC")
+    assert headers.base_directories == (root / "a" / "include",)
+    assert headers.files == (root / "a" / "include" / "a" / "a.hpp",)
+
+
+def test_abstract_interface_library_lists_no_files(public_private: Model) -> None:
+    root = (FIXTURES / "direct_layering_public_private").resolve()
+    c = _target(public_private, "c")
+
+    assert c.sources == ()
+    (headers,) = c.file_sets
+    assert headers.visibility == "INTERFACE"
+    assert headers.base_directories == (root / "c" / "include",)
+    assert headers.files == ()
+
+
+def test_locate_is_relative_to_the_source_dir(public_private: Model) -> None:
+    root = (FIXTURES / "direct_layering_public_private").resolve()
+
+    inside = public_private.locate(root / "a" / "a.cpp", 2)
+    assert inside == Location(Path("a/a.cpp"), 2)
+    assert public_private.locate(Path("/usr/include/x.h"), None) == Location(
+        Path("/usr/include/x.h"), None
+    )

@@ -25,10 +25,10 @@ class Location:
     # As in the reply's backtraceGraph: relative to the top-level source
     # directory when inside it, absolute otherwise.
     file: Path
-    line: int
+    line: int | None
 
     def __str__(self) -> str:
-        return f"{self.file}:{self.line}"
+        return str(self.file) if self.line is None else f"{self.file}:{self.line}"
 
 
 @dataclass(frozen=True)
@@ -41,6 +41,17 @@ class Dependency:
 class Definition:
     order: int  # position in configure-time execution order; compare only
     location: Location
+
+
+@dataclass(frozen=True)
+class FileSet:
+    name: str
+    type: str  # HEADERS, CXX_MODULES, ...
+    visibility: str  # PUBLIC, PRIVATE, or INTERFACE
+    base_directories: tuple[Path, ...]
+    # Empty when the reply lists none, as for INTERFACE libraries that are not
+    # part of the build system (abstractTargets).
+    files: tuple[Path, ...]
 
 
 @dataclass(frozen=True)
@@ -63,6 +74,10 @@ class Target:
     compile_dependencies: tuple[Dependency, ...]
     interface_link_libraries: tuple[Dependency, ...]
     interface_compile_dependencies: tuple[Dependency, ...]
+    # Paths below are absolute and resolved.
+    source_dir: Path  # directory whose CMakeLists.txt defines the target
+    sources: tuple[Path, ...]  # sources in no file set
+    file_sets: tuple[FileSet, ...]
 
     @property
     def declared_dependencies(self) -> tuple[Dependency, ...]:
@@ -81,6 +96,16 @@ class Target:
 @dataclass(frozen=True)
 class Model:
     targets: Mapping[str, Target]  # by id
+    source_dir: Path  # top-level, absolute and resolved
+
+    def locate(self, path: Path, line: int | None) -> Location:
+        """Location of an absolute path, in the form the File API uses."""
+        file = (
+            path.relative_to(self.source_dir)
+            if path.is_relative_to(self.source_dir)
+            else path
+        )
+        return Location(file, line)
 
 
 def _read(path: Path) -> _Json:
@@ -143,7 +168,42 @@ def _definition(
     return None if order is None else Definition(order, location)
 
 
+def _file_set_indexes(source: _Json) -> list[int]:
+    if "fileSetIndexes" in source:
+        return source["fileSetIndexes"]
+    # Before codemodel 2.11 a source names only its most recent file set.
+    return [source["fileSetIndex"]] if "fileSetIndex" in source else []
+
+
+def _files(
+    data: _Json, source_dir: Path
+) -> tuple[tuple[Path, ...], tuple[FileSet, ...]]:
+    def path(reported: str) -> Path:
+        return (source_dir / reported).resolve()
+
+    loose: list[Path] = []
+    members: list[list[Path]] = [[] for _ in data.get("fileSets", ())]
+    for source in data.get("sources", ()):
+        indexes = _file_set_indexes(source)
+        if not indexes:
+            loose.append(path(source["path"]))
+        for index in indexes:
+            members[index].append(path(source["path"]))
+    file_sets = tuple(
+        FileSet(
+            name=entry["name"],
+            type=entry["type"],
+            visibility=entry["visibility"],
+            base_directories=tuple(path(d) for d in entry["baseDirectories"]),
+            files=tuple(files),
+        )
+        for entry, files in zip(data.get("fileSets", ()), members, strict=True)
+    )
+    return tuple(loose), file_sets
+
+
 def _target(data: _Json, source_dir: Path, trace_order: Mapping[_Site, int]) -> Target:
+    sources, file_sets = _files(data, source_dir)
     return Target(
         id=data["id"],
         name=data["name"],
@@ -156,6 +216,9 @@ def _target(data: _Json, source_dir: Path, trace_order: Mapping[_Site, int]) -> 
         interface_compile_dependencies=_dependencies(
             data, "interfaceCompileDependencies"
         ),
+        source_dir=(source_dir / data["paths"]["source"]).resolve(),
+        sources=sources,
+        file_sets=file_sets,
     )
 
 
@@ -168,10 +231,12 @@ def load(build_dir: Path, trace: Path) -> Model:
     # generator should be checked in is an open decision in docs/design.md.
     (configuration,) = codemodel["configurations"]
     entries = [*configuration["targets"], *configuration["abstractTargets"]]
-    source_dir = Path(codemodel["paths"]["source"])
+    source_dir = Path(codemodel["paths"]["source"]).resolve()
     trace_order = _trace_order(trace)
     targets = (
         _target(_read(reply_dir / entry["jsonFile"]), source_dir, trace_order)
         for entry in entries
     )
-    return Model(targets={target.id: target for target in targets})
+    return Model(
+        targets={target.id: target for target in targets}, source_dir=source_dir
+    )

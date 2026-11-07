@@ -1,30 +1,15 @@
 from pathlib import Path
 
-from cpp_deps_checker.model import Dependency, Location, Model, Target, load
+from cpp_deps_checker.model import Location, Model, load
 from cpp_deps_checker.rules import Context, Level, check
+from tests import factories
+from tests.factories import target
 from tests.harness import FIXTURES, configure
 
 
 def _model(edges: dict[str, list[str]]) -> Model:
     """A model whose targets declare only the given edges, by name."""
-    return Model(
-        targets={
-            name: Target(
-                id=name,
-                name=name,
-                type="INTERFACE_LIBRARY",
-                imported=False,
-                definition=None,
-                link_libraries=(),
-                compile_dependencies=(),
-                interface_link_libraries=tuple(
-                    Dependency(target, None) for target in targets
-                ),
-                interface_compile_dependencies=(),
-            )
-            for name, targets in edges.items()
-        }
-    )
+    return factories.model(*(target(n, links=ts) for n, ts in edges.items()))
 
 
 def test_static_libraries_linking_each_other(tmp_path: Path) -> None:
