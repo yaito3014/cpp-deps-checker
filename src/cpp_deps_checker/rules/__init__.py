@@ -1,9 +1,9 @@
-from cpp_deps_checker.rules import _cycles, _definition_order
+from cpp_deps_checker.rules import _cycles, _definition_order, _direct_layering
 from cpp_deps_checker.rules._core import Context, Level, Violation
 
 __all__ = ["Context", "Level", "Violation", "check"]
 
-_RULES = (_cycles.check, _definition_order.check)
+_RULES = (_cycles.check, _definition_order.check, _direct_layering.check)
 
 
 def check(ctx: Context) -> list[Violation]:

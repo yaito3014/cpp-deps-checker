@@ -2,6 +2,10 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from cpp_deps_checker.cli import context
+from cpp_deps_checker.model import Location
+from cpp_deps_checker.rules import Level, Violation, check
+
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
@@ -50,3 +54,14 @@ def configure(source_dir: Path, build_dir: Path, *cmake_args: str) -> Build:
         trace=trace,
         compile_commands=build_dir / "compile_commands.json",
     )
+
+
+def check_fixture(fixture: str, build_dir: Path) -> list[Violation]:
+    """Configure a fixture and run every rule on it, wired as the CLI does."""
+    build = configure(FIXTURES / fixture, build_dir)
+    commands = build.compile_commands if build.compile_commands.exists() else None
+    return check(context(build.dir, build.trace, commands))
+
+
+def summary(violations: list[Violation]) -> list[tuple[str, Level, Location | None]]:
+    return [(v.rule, v.level, v.location) for v in violations]

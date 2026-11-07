@@ -50,3 +50,34 @@ def test_console_script(tmp_path: Path) -> None:
     script = Path(sys.executable).parent / "cpp-deps-checker"
 
     assert subprocess.run([script, "check", build.dir], check=False).returncode == 0
+
+
+def test_missing_default_compile_commands_warns_and_skips_includes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    build = configure(FIXTURES / "definition_order_imported", tmp_path / "build")
+    capsys.readouterr()
+
+    assert main(["check", str(build.dir)]) == 0
+    assert "include rules skipped" in capsys.readouterr().err
+
+
+def test_missing_explicit_compile_commands_fails(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    build = configure(FIXTURES / "definition_order_imported", tmp_path / "build")
+    missing = tmp_path / "nowhere.json"
+
+    assert main(["check", str(build.dir), "--compile-commands", str(missing)]) == 2
+    assert "nowhere.json" in capsys.readouterr().err
+
+
+def test_include_violation_through_the_cli(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    build = configure(FIXTURES / "direct_layering_transitive", tmp_path / "build")
+    capsys.readouterr()
+
+    assert main(["check", str(build.dir)]) == 1
+    (line,) = capsys.readouterr().out.splitlines()
+    assert line.startswith("a/a.cpp:2: error: ")
