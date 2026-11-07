@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 4.2)
+project(model_verification_name LANGUAGES CXX)
+add_library(lib STATIC lib.cpp)
+add_library(other_verify_interface_header_sets STATIC other.cpp)
+target_link_libraries(other_verify_interface_header_sets PRIVATE lib)

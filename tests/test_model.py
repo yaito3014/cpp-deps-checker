@@ -129,7 +129,9 @@ def test_missing_reply_is_reported(tmp_path: Path) -> None:
 @pytest.fixture(scope="module")
 def public_private(tmp_path_factory: pytest.TempPathFactory) -> Model:
     build = configure(
-        FIXTURES / "direct_layering_public_private", tmp_path_factory.mktemp("build")
+        FIXTURES / "direct_layering_public_private",
+        tmp_path_factory.mktemp("build"),
+        "-DCMAKE_VERIFY_INTERFACE_HEADER_SETS:BOOL=ON",
     )
     return load(build.dir, build.trace)
 
@@ -166,3 +168,30 @@ def test_locate_is_relative_to_the_source_dir(public_private: Model) -> None:
     assert public_private.locate(Path("/usr/include/x.h"), None) == Location(
         Path("/usr/include/x.h"), None
     )
+
+
+def test_header_set_verification_targets_are_marked(public_private: Model) -> None:
+    a = _target(public_private, "a")
+    verification = _target(public_private, "a_verify_interface_header_sets")
+
+    # CMake creates it with a file-level backtrace only, so no definition.
+    assert verification.definition is None
+    assert verification.verifies == a.id
+    assert a.verifies is None
+
+
+def test_verified_target_of_a_verification_source(public_private: Model) -> None:
+    a = _target(public_private, "a")
+    (source,) = _target(public_private, "a_verify_interface_header_sets").sources
+
+    assert public_private.verified_target(source) == a
+    assert public_private.verified_target(a.sources[0]) is None
+
+
+def test_declared_target_with_a_verification_name_is_not_marked(
+    tmp_path: Path,
+) -> None:
+    build = configure(FIXTURES / "model_verification_name", tmp_path / "build")
+    model = load(build.dir, build.trace)
+
+    assert _target(model, "other_verify_interface_header_sets").verifies is None

@@ -15,6 +15,7 @@ def target(
     sources: Sequence[Path] = (),
     file_sets: Sequence[FileSet] = (),
     links: Iterable[str] = (),
+    verifies: str | None = None,
 ) -> Target:
     """A target with the given interface links and files; paths are absolute."""
     return Target(
@@ -30,6 +31,7 @@ def target(
         source_dir=ROOT / name if source_dir is None else source_dir,
         sources=tuple(sources),
         file_sets=tuple(file_sets),
+        verifies=verifies,
     )
 
 

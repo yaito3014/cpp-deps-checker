@@ -78,6 +78,9 @@ class Target:
     source_dir: Path  # directory whose CMakeLists.txt defines the target
     sources: tuple[Path, ...]  # sources in no file set
     file_sets: tuple[FileSet, ...]
+    # For a target CMake creates to verify another target's interface header
+    # set (CMAKE_VERIFY_INTERFACE_HEADER_SETS): the id of that target.
+    verifies: str | None
 
     @property
     def declared_dependencies(self) -> tuple[Dependency, ...]:
@@ -107,6 +110,13 @@ class Model:
         )
         return Location(file, line)
 
+    def verified_target(self, source: Path) -> Target | None:
+        """The target whose header set verification compiles source, if any."""
+        for target in self.targets.values():
+            if target.verifies is not None and source in target.sources:
+                return self.targets[target.verifies]
+        return None
+
 
 def _read(path: Path) -> _Json:
     return json.loads(path.read_text())
@@ -131,7 +141,9 @@ def _location(graph: _Json, backtrace: int | None) -> Location | None:
     if backtrace is None:
         return None
     node = graph["nodes"][backtrace]
-    return Location(Path(graph["files"][node["file"]]), node["line"])
+    # A target CMake creates itself (such as a header set verification
+    # target) has only a file-level node, without a line.
+    return Location(Path(graph["files"][node["file"]]), node.get("line"))
 
 
 def _dependencies(data: _Json, field: str) -> tuple[Dependency, ...]:
@@ -166,6 +178,21 @@ def _definition(
     site = ((source_dir / location.file).resolve(), location.line, data["name"])
     order = trace_order.get(site)
     return None if order is None else Definition(order, location)
+
+
+def _verifies(data: _Json, definition: Definition | None) -> str | None:
+    # CMake names the target <target>_verify_interface_header_sets and links
+    # it to <target> only. No command in the project creates it, so it has no
+    # definition; a user target of the same name has one.
+    links = data.get("linkLibraries", ())
+    if (
+        definition is not None
+        or not data["name"].endswith("_verify_interface_header_sets")
+        or len(links) != 1
+        or "id" not in links[0]
+    ):
+        return None
+    return links[0]["id"]
 
 
 def _file_set_indexes(source: _Json) -> list[int]:
@@ -204,12 +231,13 @@ def _files(
 
 def _target(data: _Json, source_dir: Path, trace_order: Mapping[_Site, int]) -> Target:
     sources, file_sets = _files(data, source_dir)
+    definition = _definition(data, source_dir, trace_order)
     return Target(
         id=data["id"],
         name=data["name"],
         type=data["type"],
         imported=data.get("imported", False),
-        definition=_definition(data, source_dir, trace_order),
+        definition=definition,
         link_libraries=_dependencies(data, "linkLibraries"),
         compile_dependencies=_dependencies(data, "compileDependencies"),
         interface_link_libraries=_dependencies(data, "interfaceLinkLibraries"),
@@ -219,6 +247,7 @@ def _target(data: _Json, source_dir: Path, trace_order: Mapping[_Site, int]) -> 
         source_dir=(source_dir / data["paths"]["source"]).resolve(),
         sources=sources,
         file_sets=file_sets,
+        verifies=_verifies(data, definition),
     )
 
 
