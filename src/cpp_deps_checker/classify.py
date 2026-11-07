@@ -53,9 +53,13 @@ def _index(claims: Iterable[tuple[Path, Owner]]) -> dict[Path, Owner | None]:
 
 def classify(model: Model) -> Owners:
     # Imported targets' files are an open decision (docs/design.md); custom
-    # targets are not code.
+    # targets are not code; a header set verification target shares the
+    # source directory of the target it verifies and compiles only generated
+    # files.
     owning = [
-        t for t in model.targets.values() if not t.imported and t.type != "UTILITY"
+        t
+        for t in model.targets.values()
+        if not t.imported and t.type != "UTILITY" and t.verifies is None
     ]
     listed = [
         (path, Owner(t.id, _public(t, None))) for t in owning for path in t.sources

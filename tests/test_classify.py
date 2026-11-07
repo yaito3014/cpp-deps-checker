@@ -78,3 +78,18 @@ def test_imported_and_utility_targets_own_nothing() -> None:
 def test_file_outside_every_target_is_unowned() -> None:
     a = target("a", type="STATIC_LIBRARY")
     assert classify(model(a)).of(Path("/usr/include/vector")) is None
+
+
+def test_header_set_verification_target_owns_nothing() -> None:
+    a = target("a", type="STATIC_LIBRARY")
+    verification = target(
+        "a_verify_interface_header_sets",
+        type="OBJECT_LIBRARY",
+        source_dir=ROOT / "a",
+        sources=[ROOT / "build/a/a.hpp.cxx"],
+        verifies="a",
+    )
+    owners = classify(model(a, verification))
+
+    assert owners.of(ROOT / "a/x.hpp") == Owner("a", public=False)
+    assert owners.of(ROOT / "build/a/a.hpp.cxx") is None
