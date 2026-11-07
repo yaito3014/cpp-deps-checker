@@ -34,12 +34,15 @@ def context(build_dir: Path, trace: Path, compile_commands: Path | None) -> Cont
     """Every rule's input; without compile_commands there are no include edges."""
     model = load(build_dir, trace)
     owners = classify(model)
-    includes = (
-        ()
-        if compile_commands is None
-        else collect(compile_commands, keep=lambda path: owners.of(path) is not None)
+    if compile_commands is None:
+        return Context(model=model, includes=(), owners=owners)
+    collection = collect(
+        compile_commands, keep=lambda path: owners.of(path) is not None
     )
-    return Context(model=model, includes=includes, owners=owners)
+    if collection.failures:
+        failure = collection.failures[0]
+        raise IncludeError(f"preprocessing {failure.source} failed:\n{failure.output}")
+    return Context(model=model, includes=collection.includes, owners=owners)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

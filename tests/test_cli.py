@@ -81,3 +81,13 @@ def test_include_violation_through_the_cli(
     assert main(["check", str(build.dir)]) == 1
     (line,) = capsys.readouterr().out.splitlines()
     assert line.startswith("a/a.cpp:2: error: ")
+
+
+def test_failure_outside_header_set_verification_is_unusable_input(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    build = configure(FIXTURES / "includes_broken_source", tmp_path / "build")
+    capsys.readouterr()
+
+    assert main(["check", str(build.dir)]) == 2
+    assert "missing.hpp" in capsys.readouterr().err

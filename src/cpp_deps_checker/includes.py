@@ -13,6 +13,7 @@ type _Edge = tuple[Path, Path]  # includer, included
 
 _TREE_LINE = re.compile(r"^(\.+) (.+)$")
 _DIRECTIVE = re.compile(r'^\s*#\s*(?:include|include_next|import)\s*[<"]([^>"]+)[>"]')
+_ERROR = re.compile(r"^(.+):(\d+):\d+: (?:fatal )?error: (.+)$")
 
 
 class IncludeError(Exception):
@@ -24,6 +25,30 @@ class Include:
     includer: Path  # absolute and resolved, like included
     included: Path
     line: int | None  # of the directive in includer, if it could be found
+
+
+@dataclass(frozen=True)
+class Diagnostic:
+    file: Path  # absolute and resolved
+    line: int
+    message: str
+
+
+@dataclass(frozen=True)
+class Failure:
+    """A translation unit that did not preprocess."""
+
+    source: Path  # absolute and resolved
+    error: Diagnostic | None  # the first error the compiler reported
+    output: str  # everything the compiler wrote to stderr
+
+
+@dataclass(frozen=True)
+class Collection:
+    # A failed translation unit still contributes the edges it printed before
+    # stopping.
+    includes: tuple[Include, ...]
+    failures: tuple[Failure, ...]
 
 
 def parse_tree(output: str, source: Path, directory: Path) -> set[_Edge]:
@@ -78,8 +103,18 @@ def _preprocess_arguments(entry: dict[str, Any]) -> list[str]:
     return [*kept, "-E", "-H", "-fshow-skipped-includes", "-o", os.devnull]
 
 
-def _edges(entry: dict[str, Any]) -> set[_Edge]:
+def _first_error(output: str, directory: Path) -> Diagnostic | None:
+    for line in output.splitlines():
+        match = _ERROR.match(line)
+        if match is not None:
+            file = (directory / match[1]).resolve()
+            return Diagnostic(file, int(match[2]), match[3])
+    return None
+
+
+def _preprocess(entry: dict[str, Any]) -> tuple[set[_Edge], Failure | None]:
     directory = Path(entry["directory"])
+    source = Path(entry["file"])
     result = subprocess.run(
         _preprocess_arguments(entry),
         cwd=directory,
@@ -88,9 +123,15 @@ def _edges(entry: dict[str, Any]) -> set[_Edge]:
         errors="replace",
         check=False,
     )
-    if result.returncode != 0:
-        raise IncludeError(f"preprocessing {entry['file']} failed:\n{result.stderr}")
-    return parse_tree(result.stderr, Path(entry["file"]), directory)
+    edges = parse_tree(result.stderr, source, directory)
+    if result.returncode == 0:
+        return edges, None
+    failure = Failure(
+        source=(directory / source).resolve(),
+        error=_first_error(result.stderr, directory),
+        output=result.stderr,
+    )
+    return edges, failure
 
 
 def _lines(edges: Iterable[_Edge]) -> list[Include]:
@@ -105,11 +146,14 @@ def _lines(edges: Iterable[_Edge]) -> list[Include]:
     return includes
 
 
-def collect(
-    compile_commands: Path, keep: Callable[[Path], bool]
-) -> tuple[Include, ...]:
-    """Include edges of every translation unit, for includers that keep accepts."""
+def collect(compile_commands: Path, keep: Callable[[Path], bool]) -> Collection:
+    """Include edges of every translation unit, for includers that keep accepts,
+    and the translation units that failed to preprocess."""
     entries = json.loads(compile_commands.read_text())
     with ThreadPoolExecutor() as pool:
-        edges = set().union(*pool.map(_edges, entries))
-    return tuple(sorted(_lines(edge for edge in edges if keep(edge[0]))))
+        results = list(pool.map(_preprocess, entries))
+    edges: set[_Edge] = set().union(*(edges for edges, _ in results))
+    return Collection(
+        includes=tuple(sorted(_lines(edge for edge in edges if keep(edge[0])))),
+        failures=tuple(failure for _, failure in results if failure is not None),
+    )

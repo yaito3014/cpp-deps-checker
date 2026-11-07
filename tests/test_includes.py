@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 
 from cpp_deps_checker.includes import (
+    Diagnostic,
     Include,
-    IncludeError,
     collect,
     directive_line,
     parse_tree,
@@ -59,23 +59,25 @@ def test_collect_runs_every_translation_unit(public_private: Path) -> None:
     root = (FIXTURES / "direct_layering_public_private").resolve()
     a_cpp, a_hpp = root / "a/a.cpp", root / "a/include/a/a.hpp"
 
-    includes = collect(public_private / "compile_commands.json", keep=lambda _: True)
+    collection = collect(public_private / "compile_commands.json", keep=lambda _: True)
 
-    assert set(includes) == {
+    assert set(collection.includes) == {
         Include(a_cpp, a_hpp, 1),
         Include(a_hpp, root / "c/include/c/c.hpp", 3),
     }
+    assert collection.failures == ()
 
 
 def test_collect_keeps_only_requested_includers(public_private: Path) -> None:
-    includes = collect(
+    collection = collect(
         public_private / "compile_commands.json", keep=lambda p: p.suffix == ".cpp"
     )
-    assert [include.includer.name for include in includes] == ["a.cpp"]
+    assert [include.includer.name for include in collection.includes] == ["a.cpp"]
 
 
-def test_preprocessing_failure_raises(tmp_path: Path) -> None:
-    (tmp_path / "m.cpp").write_text('#include "missing.hpp"\n')
+def test_preprocessing_failure_is_returned_with_edges_so_far(tmp_path: Path) -> None:
+    (tmp_path / "ok.hpp").write_text("")
+    (tmp_path / "m.cpp").write_text('#include "ok.hpp"\n#include "missing.hpp"\n')
     commands = tmp_path / "compile_commands.json"
     commands.write_text(
         json.dumps(
@@ -88,6 +90,14 @@ def test_preprocessing_failure_raises(tmp_path: Path) -> None:
             ]
         )
     )
+    root = tmp_path.resolve()
 
-    with pytest.raises(IncludeError, match=r"missing\.hpp"):
-        collect(commands, keep=lambda _: True)
+    collection = collect(commands, keep=lambda _: True)
+
+    assert collection.includes == (Include(root / "m.cpp", root / "ok.hpp", 1),)
+    (failure,) = collection.failures
+    assert failure.source == root / "m.cpp"
+    assert failure.error == Diagnostic(
+        root / "m.cpp", 2, "'missing.hpp' file not found"
+    )
+    assert "missing.hpp" in failure.output
