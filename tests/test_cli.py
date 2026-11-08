@@ -4,7 +4,9 @@ from pathlib import Path
 
 import pytest
 
+from cpp_deps_checker import report
 from cpp_deps_checker.cli import main
+from cpp_deps_checker.report import Graph, Kind
 from tests.harness import FIXTURES, configure
 
 
@@ -116,3 +118,28 @@ def test_annotations_are_relative_to_the_working_directory(
         "::error file=definition_order_late/CMakeLists.txt,line=5,"
         "title=definition-order::a links late"
     )
+
+
+def test_graph_is_written_without_checking(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    build = configure(FIXTURES / "definition_order_late", tmp_path / "build")
+    output = tmp_path / "graph.md"
+
+    assert main(["graph", str(build.dir), "--output", str(output)]) == 0
+
+    expected = Graph(
+        nodes={"a": Kind.PRODUCTION, "base": Kind.PRODUCTION, "late": Kind.PRODUCTION},
+        edges=frozenset({("a", "base"), ("a", "late")}),
+    )
+    assert report.parse_mermaid(output.read_text()) == expected
+    capsys.readouterr()
+    assert main(["graph", str(build.dir)]) == 0
+    assert capsys.readouterr().out == output.read_text()
+
+
+def test_graph_of_unloadable_input_fails(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["graph", str(tmp_path)]) == 2
+    assert "no File API reply" in capsys.readouterr().err

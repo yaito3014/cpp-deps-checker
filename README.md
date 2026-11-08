@@ -18,6 +18,8 @@ cpp-deps-checker check build
 
 Exit status: 0 when clean (or warnings only), 1 when any error is found, 2 when the inputs cannot be loaded, including a translation unit that fails to preprocess outside header set verification. `--trace FILE` and `--compile-commands FILE` point at inputs written elsewhere. `--annotations` prints GitHub Actions `::error` and `::warning` workflow commands instead of text lines, with paths relative to the current directory (the repository root in CI). Without a compilation database at its default path, the include rules are skipped with a warning.
 
+`cpp-deps-checker graph build` writes the declared edges between targets as a Mermaid flowchart in Markdown (`--output FILE` instead of standard output); it reads only the File API reply and the trace.
+
 ## Development
 
 ```sh
