@@ -143,3 +143,62 @@ def test_graph_of_unloadable_input_fails(
 ) -> None:
     assert main(["graph", str(tmp_path)]) == 2
     assert "no File API reply" in capsys.readouterr().err
+
+
+def test_summary_is_appended_with_new_edges_against_the_baseline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    build = configure(FIXTURES / "definition_order_late", tmp_path / "build")
+    baseline = tmp_path / "base.md"
+    baseline.write_text(
+        report.mermaid(
+            Graph(
+                nodes={"a": Kind.PRODUCTION, "base": Kind.PRODUCTION},
+                edges=frozenset({("a", "base")}),
+            )
+        )
+    )
+    summary = tmp_path / "summary.md"
+    summary.write_text("earlier step\n")
+    monkeypatch.chdir(FIXTURES)
+
+    args = ["--summary", str(summary), "--baseline", str(baseline)]
+    assert main(["check", str(build.dir), *args]) == 1
+
+    text = summary.read_text()
+    assert text.startswith("earlier step\n## cpp-deps-checker\n")
+    assert "| `definition_order_late/CMakeLists.txt:5` | error |" in text
+    assert text.endswith("### New edges\n\n- `a` -> `late`\n")
+
+
+def test_summary_without_baseline(tmp_path: Path) -> None:
+    build = configure(FIXTURES / "definition_order_imported", tmp_path / "build")
+    summary = tmp_path / "summary.md"
+
+    assert main(["check", str(build.dir), "--summary", str(summary)]) == 0
+    assert summary.read_text().endswith("new edges are not listed.\n")
+
+
+def test_baseline_needs_a_summary(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["check", str(tmp_path), "--baseline", str(tmp_path / "base.md")])
+
+    assert exit_info.value.code == 2
+    assert "--baseline requires --summary" in capsys.readouterr().err
+
+
+def test_unreadable_baseline_is_unusable_input(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    build = configure(FIXTURES / "definition_order_imported", tmp_path / "build")
+    baseline = tmp_path / "base.md"
+    baseline.write_text("# not a graph\n")
+    summary = tmp_path / "summary.md"
+    capsys.readouterr()
+
+    args = ["--summary", str(summary), "--baseline", str(baseline)]
+    assert main(["check", str(build.dir), *args]) == 2
+    assert "not a Mermaid graph" in capsys.readouterr().err
+    assert not summary.exists()

@@ -1,11 +1,11 @@
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
 from cpp_deps_checker.model import Location, Model
-from cpp_deps_checker.rules import Violation
+from cpp_deps_checker.rules import Level, Violation
 
 
 def text(violation: Violation) -> str:
@@ -151,3 +151,52 @@ def parse_mermaid(text: str) -> Graph:
         else:
             raise GraphError(f"line {number} is not a node or an edge: {line}")
     return Graph(nodes=nodes, edges=frozenset(edges))
+
+
+def _count(n: int, noun: str) -> str:
+    return f"{n} {noun}{'' if n == 1 else 's'}"
+
+
+def _cell(value: str) -> str:
+    return value.replace("|", "\\|").replace("\n", " ")
+
+
+def summary(
+    violations: Sequence[Violation],
+    source_dir: Path,
+    root: Path,
+    new_edges: Sequence[Edge] | None,
+) -> str:
+    """A Markdown job summary: every violation, since GitHub shows only a
+    few annotations per step, then the edges the base branch's graph lacks
+    (None: no baseline graph). Paths are relative to root, as in annotation.
+    """
+    lines = ["## cpp-deps-checker", ""]
+    if violations:
+        errors = sum(v.level is Level.ERROR for v in violations)
+        warnings = len(violations) - errors
+        lines += [
+            f"{_count(errors, 'error')}, {_count(warnings, 'warning')}.",
+            "",
+            "| Location | Level | Rule | Message |",
+            "| --- | --- | --- | --- |",
+        ]
+        for v in violations:
+            location = (
+                ""
+                if v.location is None
+                else f"`{_from_root(v.location, source_dir, root)}`"
+            )
+            lines.append(
+                f"| {_cell(location)} | {v.level} | {v.rule} | {_cell(v.message)} |"
+            )
+    else:
+        lines.append("No violations.")
+    lines += ["", "### New edges", ""]
+    if new_edges is None:
+        lines.append("No baseline graph, so new edges are not listed.")
+    elif not new_edges:
+        lines.append("No new edges.")
+    else:
+        lines += [f"- `{a}` -> `{b}`" for a, b in new_edges]
+    return "".join(f"{line}\n" for line in lines)

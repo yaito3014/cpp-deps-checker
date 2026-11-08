@@ -7,6 +7,7 @@ from cpp_deps_checker import report
 from cpp_deps_checker.classify import classify, find_tests
 from cpp_deps_checker.includes import IncludeError, collect
 from cpp_deps_checker.model import Model, ReplyError, load
+from cpp_deps_checker.report import GraphError
 from cpp_deps_checker.rules import Context, Level, check
 
 
@@ -36,6 +37,18 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print GitHub Actions workflow commands instead of text, with paths "
         "relative to the current directory",
+    )
+    check_command.add_argument(
+        "--summary",
+        type=Path,
+        help="append a Markdown summary to this file, with paths relative to the "
+        "current directory (in GitHub Actions: $GITHUB_STEP_SUMMARY)",
+    )
+    check_command.add_argument(
+        "--baseline",
+        type=Path,
+        help="graph written by the graph command on the base branch; the summary "
+        "lists the edges it lacks",
     )
     graph_command.add_argument(
         "--output", "-o", type=Path, help="file to write (default: standard output)"
@@ -99,8 +112,13 @@ def _check(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
     try:
+        baseline = (
+            None
+            if args.baseline is None
+            else report.parse_mermaid(args.baseline.read_text())
+        )
         ctx = context(build_dir, trace, compile_commands)
-    except (ReplyError, IncludeError, FileNotFoundError) as error:
+    except (ReplyError, IncludeError, GraphError, FileNotFoundError) as error:
         return _error(error)
     violations = check(ctx)
     root = Path.cwd().resolve()
@@ -110,6 +128,16 @@ def _check(args: argparse.Namespace) -> int:
             if args.annotations
             else report.text(violation)
         )
+    if args.summary is not None:
+        new_edges = (
+            None
+            if baseline is None
+            else sorted(report.graph(ctx.model, ctx.tests).edges - baseline.edges)
+        )
+        with args.summary.open("a") as summary:
+            summary.write(
+                report.summary(violations, ctx.model.source_dir, root, new_edges)
+            )
     return 1 if any(v.level is Level.ERROR for v in violations) else 0
 
 
@@ -130,5 +158,8 @@ def _graph(args: argparse.Namespace) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Exit status: 0 clean or warnings only, 1 errors found, 2 unusable input."""
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if args.command == "check" and args.baseline is not None and args.summary is None:
+        parser.error("--baseline requires --summary")
     return _graph(args) if args.command == "graph" else _check(args)

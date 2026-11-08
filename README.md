@@ -20,6 +20,8 @@ Exit status: 0 when clean (or warnings only), 1 when any error is found, 2 when 
 
 `cpp-deps-checker graph build` writes the declared edges between targets as a Mermaid flowchart in Markdown (`--output FILE` instead of standard output); it reads only the File API reply and the trace.
 
+`check --summary FILE` appends a Markdown summary of the violations to FILE (in GitHub Actions, `$GITHUB_STEP_SUMMARY`), and with `--baseline GRAPH`, a graph written by `graph` on the base branch, it also lists the edges that graph lacks.
+
 ## Development
 
 ```sh

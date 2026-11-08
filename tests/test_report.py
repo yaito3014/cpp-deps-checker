@@ -140,3 +140,53 @@ def test_mermaid_round_trips() -> None:
 def test_parse_mermaid_rejects_what_mermaid_did_not_write(text: str) -> None:
     with pytest.raises(report.GraphError):
         report.parse_mermaid(text)
+
+
+def test_summary_tables_violations_and_lists_new_edges() -> None:
+    violations = [
+        _violation(Location(Path("CMakeLists.txt"), 5), "a | b"),
+        _violation(None, level=Level.WARNING),
+        _violation(Location(Path("/usr/include/x.hpp"), None), "line\nbreak"),
+    ]
+
+    assert report.summary(
+        violations, SOURCE, ROOT, new_edges=[("a", "b"), ("ext::x", "c")]
+    ) == (
+        "## cpp-deps-checker\n"
+        "\n"
+        "2 errors, 1 warning.\n"
+        "\n"
+        "| Location | Level | Rule | Message |\n"
+        "| --- | --- | --- | --- |\n"
+        "| `project/CMakeLists.txt:5` | error | no-cycles | a \\| b |\n"
+        "|  | warning | no-cycles | a links b |\n"
+        "| `/usr/include/x.hpp` | error | no-cycles | line break |\n"
+        "\n"
+        "### New edges\n"
+        "\n"
+        "- `a` -> `b`\n"
+        "- `ext::x` -> `c`\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("new_edges", "edges_text"),
+    [
+        ([], "No new edges.\n"),
+        (None, "No baseline graph, so new edges are not listed.\n"),
+    ],
+)
+def test_summary_without_violations_or_new_edges(
+    new_edges: list[report.Edge] | None, edges_text: str
+) -> None:
+    assert report.summary([], SOURCE, ROOT, new_edges=new_edges) == (
+        "## cpp-deps-checker\n\nNo violations.\n\n### New edges\n\n" + edges_text
+    )
+
+
+def test_summary_counts_one_error_and_several_warnings() -> None:
+    violations = [_violation(None), *[_violation(None, level=Level.WARNING)] * 2]
+
+    text = report.summary(violations, SOURCE, ROOT, new_edges=None)
+
+    assert "\n1 error, 2 warnings.\n" in text
