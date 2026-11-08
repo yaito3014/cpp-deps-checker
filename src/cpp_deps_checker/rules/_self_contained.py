@@ -7,7 +7,7 @@ def _violations(ctx: Context) -> Iterator[Violation]:
     model = ctx.model
     for failure in ctx.failures:
         verified = model.verified_target(failure.source)
-        if verified is None:
+        if verified is None or verified.id in ctx.external:
             continue
         error = failure.error
         if error is None:

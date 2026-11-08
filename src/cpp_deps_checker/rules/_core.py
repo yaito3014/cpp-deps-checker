@@ -20,14 +20,17 @@ class Context:
     failures: tuple[Failure, ...]
     owners: Owners
     tests: frozenset[str]  # ids of test targets
+    external: frozenset[str]  # ids of targets whose code is not the project's
 
     def production(self) -> dict[str, Target]:
         """Targets the privacy and placement rules apply to, by id: not
-        imported, not tests, and not header set verification targets."""
+        external, not tests, and not header set verification targets."""
         return {
             t.id: t
             for t in self.model.targets.values()
-            if not t.imported and t.id not in self.tests and t.verifies is None
+            if t.id not in self.external
+            and t.id not in self.tests
+            and t.verifies is None
         }
 
 

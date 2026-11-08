@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from cpp_deps_checker import report
-from cpp_deps_checker.classify import classify, find_tests
+from cpp_deps_checker.classify import classify, find_external, find_tests
 from cpp_deps_checker.includes import IncludeError, collect
 from cpp_deps_checker.model import Model, ReplyError, load
 from cpp_deps_checker.report import GraphError
@@ -71,9 +71,15 @@ def context(build_dir: Path, trace: Path, compile_commands: Path | None) -> Cont
     model = load(build_dir, trace)
     owners = classify(model)
     tests = _tests(model)
+    external = find_external(model)
     if compile_commands is None:
         return Context(
-            model=model, includes=(), failures=(), owners=owners, tests=tests
+            model=model,
+            includes=(),
+            failures=(),
+            owners=owners,
+            tests=tests,
+            external=external,
         )
     collection = collect(
         compile_commands, keep=lambda path: owners.of(path) is not None
@@ -89,6 +95,7 @@ def context(build_dir: Path, trace: Path, compile_commands: Path | None) -> Cont
         failures=collection.failures,
         owners=owners,
         tests=tests,
+        external=external,
     )
 
 
@@ -132,7 +139,9 @@ def _check(args: argparse.Namespace) -> int:
         new_edges = (
             None
             if baseline is None
-            else sorted(report.graph(ctx.model, ctx.tests).edges - baseline.edges)
+            else sorted(
+                report.graph(ctx.model, ctx.tests, ctx.external).edges - baseline.edges
+            )
         )
         with args.summary.open("a") as summary:
             summary.write(
@@ -148,7 +157,7 @@ def _graph(args: argparse.Namespace) -> int:
         model = load(build_dir, args.trace or build_dir / "trace.json")
     except (ReplyError, FileNotFoundError) as error:
         return _error(error)
-    text = report.mermaid(report.graph(model, _tests(model)))
+    text = report.mermaid(report.graph(model, _tests(model), find_external(model)))
     if output is None:
         sys.stdout.write(text)
     else:

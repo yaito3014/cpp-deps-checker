@@ -31,7 +31,8 @@ class _Claim:
         return Owner(self.target, self.public, detail)
 
 
-type _Index = Mapping[Path, _Claim | None]  # None: claimed by several owners
+# None: claimed by several owners, or by an external target.
+type _Index = Mapping[Path, _Claim | None]
 
 
 @dataclass(frozen=True)
@@ -84,17 +85,42 @@ def _relative(path: Path, directories: Iterable[Path]) -> Path | None:
     return path.relative_to(max(containing, key=lambda d: len(d.parts)))
 
 
+def find_external(model: Model) -> frozenset[str]:
+    """Ids of the targets whose code is not the project's: imported targets,
+    and targets defined outside the top-level source directory or inside a
+    build directory nested in it, where FetchContent puts what it fetches."""
+    source, build = model.source_dir, model.build_dir
+    nested_build = build != source and build.is_relative_to(source)
+
+    def external(target: Target) -> bool:
+        return (
+            target.imported
+            or not target.source_dir.is_relative_to(source)
+            or (nested_build and target.source_dir.is_relative_to(build))
+        )
+
+    return frozenset(t.id for t in model.targets.values() if external(t))
+
+
 def classify(model: Model) -> Owners:
     # Imported targets' files are an open decision (docs/design.md); custom
     # targets are not code; a header set verification target shares the
     # source directory of the target it verifies and compiles only generated
     # files.
+    external = find_external(model)
     owning = [
         t
         for t in model.targets.values()
-        if not t.imported and t.type != "UTILITY" and t.verifies is None
+        if t.id not in external and t.type != "UTILITY" and t.verifies is None
     ]
-    listed = [
+    # The files of other external targets belong to no target, even inside a
+    # directory a project target claims (a build directory in the source
+    # tree). An imported target's source directory is only where it is
+    # declared.
+    shadowing = [
+        t for t in model.targets.values() if t.id in external and not t.imported
+    ]
+    listed: list[tuple[Path, Owner | None]] = [
         (path, _Claim(t.id, _public(t, None)).owner(_relative(path, [t.source_dir])))
         for t in owning
         for path in t.sources
@@ -109,16 +135,29 @@ def classify(model: Model) -> Owners:
         for file_set in t.file_sets
         for path in file_set.files
     ]
-    base_directories = [
+    listed += [
+        (path, None)
+        for t in shadowing
+        for path in (*t.sources, *(p for f in t.file_sets for p in f.files))
+    ]
+    base_directories: list[tuple[Path, _Claim | None]] = [
         (directory, _Claim(t.id, _public(t, file_set.visibility)))
         for t in owning
         for file_set in t.file_sets
         if not file_set.files
         for directory in file_set.base_directories
     ]
-    source_directories = [
+    base_directories += [
+        (directory, None)
+        for t in shadowing
+        for file_set in t.file_sets
+        if not file_set.files
+        for directory in file_set.base_directories
+    ]
+    source_directories: list[tuple[Path, _Claim | None]] = [
         (t.source_dir, _Claim(t.id, _public(t, None))) for t in owning
     ]
+    source_directories += [(t.source_dir, None) for t in shadowing]
     return Owners(
         listed=_index(listed),
         base_directories=_index(base_directories),
@@ -136,12 +175,14 @@ def find_tests(
     relative to the top-level source directory, matches one of directories,
     or whose name matches one of names (fnmatch patterns).
 
-    A header set verification target is a test target exactly when the
-    target it verifies is one.
+    External targets are never test targets, and a header set verification
+    target is one exactly when the target it verifies is one.
     """
 
+    external = find_external(model)
+
     def matches(target: Target) -> bool:
-        if target.imported or target.verifies is not None:
+        if target.id in external or target.verifies is not None:
             return False
         lists_file = target.source_dir.relative_to(model.source_dir) / "CMakeLists.txt"
         return any(lists_file.full_match(d) for d in directories) or any(

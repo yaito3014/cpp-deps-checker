@@ -59,7 +59,7 @@ class GraphError(Exception):
 class Kind(StrEnum):
     PRODUCTION = "production"
     TEST = "test"
-    IMPORTED = "imported"
+    EXTERNAL = "external"
 
 
 type Edge = tuple[str, str]  # consumer name, dependency name
@@ -71,8 +71,9 @@ class Graph:
     edges: frozenset[Edge]
 
 
-def graph(model: Model, tests: frozenset[str]) -> Graph:
-    """The declared edges between targets, by name.
+def graph(model: Model, tests: frozenset[str], external: frozenset[str]) -> Graph:
+    """The declared edges between targets, by name; tests and external are
+    sets of target ids.
 
     Header set verification targets are left out because CMake creates them,
     and UTILITY targets because CMake does not let them be linked. Targets
@@ -86,8 +87,8 @@ def graph(model: Model, tests: frozenset[str]) -> Graph:
     }
 
     def kind(target_id: str) -> Kind:
-        if shown[target_id].imported:
-            return Kind.IMPORTED
+        if target_id in external:
+            return Kind.EXTERNAL
         return Kind.TEST if target_id in tests else Kind.PRODUCTION
 
     return Graph(
@@ -106,9 +107,9 @@ _HEADER = (
     f"{_FENCE}mermaid",
     "flowchart TD",
     "  classDef test stroke-dasharray: 4 4",
-    "  classDef imported font-style: italic",
+    "  classDef external font-style: italic",
 )
-_NODE = re.compile(r'^  (n\d+)\["([^"]*)"\](?::::(test|imported))?$')
+_NODE = re.compile(r'^  (n\d+)\["([^"]*)"\](?::::(test|external))?$')
 _EDGE = re.compile(r"^  (n\d+) --> (n\d+)$")
 # Mermaid entity codes, for the characters that would end the label or
 # start an entity.

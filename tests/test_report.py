@@ -66,10 +66,10 @@ def test_graph_has_declared_targets_and_edges_by_name() -> None:
         placed("odd", "odd", "lib_verify_interface_header_sets", "docs"),
     )
 
-    assert report.graph(m, frozenset({"lib_test"})) == Graph(
+    assert report.graph(m, frozenset({"lib_test"}), frozenset({"ext::x"})) == Graph(
         nodes={
             "app": Kind.PRODUCTION,
-            "ext::x": Kind.IMPORTED,
+            "ext::x": Kind.EXTERNAL,
             "lib": Kind.PRODUCTION,
             "lib_test": Kind.TEST,
             "odd": Kind.PRODUCTION,
@@ -80,7 +80,7 @@ def test_graph_has_declared_targets_and_edges_by_name() -> None:
 
 def test_mermaid_lists_sorted_nodes_then_edges() -> None:
     graph = Graph(
-        nodes={"b": Kind.PRODUCTION, "a": Kind.TEST, "ext::x": Kind.IMPORTED},
+        nodes={"b": Kind.PRODUCTION, "a": Kind.TEST, "ext::x": Kind.EXTERNAL},
         edges=frozenset(
             {("b", "ext::x"), ("ext::x", "a"), ("a", "b"), ("b", "a"), ("a", "ext::x")}
         ),
@@ -90,10 +90,10 @@ def test_mermaid_lists_sorted_nodes_then_edges() -> None:
         "```mermaid\n"
         "flowchart TD\n"
         "  classDef test stroke-dasharray: 4 4\n"
-        "  classDef imported font-style: italic\n"
+        "  classDef external font-style: italic\n"
         '  n0["a"]:::test\n'
         '  n1["b"]\n'
-        '  n2["ext::x"]:::imported\n'
+        '  n2["ext::x"]:::external\n'
         "  n0 --> n1\n"
         "  n0 --> n2\n"
         "  n1 --> n0\n"
@@ -116,7 +116,7 @@ def test_mermaid_round_trips() -> None:
         nodes={
             'q"uote': Kind.PRODUCTION,
             "h#sh": Kind.TEST,
-            "#quot;": Kind.IMPORTED,
+            "#quot;": Kind.EXTERNAL,
             "lone": Kind.PRODUCTION,
         },
         edges=frozenset({('q"uote', "h#sh"), ("h#sh", "#quot;")}),

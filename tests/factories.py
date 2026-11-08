@@ -1,7 +1,7 @@
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-from cpp_deps_checker.classify import classify, find_tests
+from cpp_deps_checker.classify import classify, find_external, find_tests
 from cpp_deps_checker.model import Dependency, FileSet, Model, Target
 from cpp_deps_checker.rules import Context, check
 
@@ -50,8 +50,10 @@ def headers(
     )
 
 
-def model(*targets: Target) -> Model:
-    return Model(targets={t.id: t for t in targets}, source_dir=ROOT, build_dir=BUILD)
+def model(*targets: Target, build_dir: Path = BUILD) -> Model:
+    return Model(
+        targets={t.id: t for t in targets}, source_dir=ROOT, build_dir=build_dir
+    )
 
 
 def placed(
@@ -78,6 +80,11 @@ def messages(rule: str, *targets: Target) -> list[str]:
     classified with the default test patterns and no include edges."""
     m = model(*targets)
     ctx = Context(
-        model=m, includes=(), failures=(), owners=classify(m), tests=find_tests(m)
+        model=m,
+        includes=(),
+        failures=(),
+        owners=classify(m),
+        tests=find_tests(m),
+        external=find_external(m),
     )
     return [v.message for v in check(ctx) if v.rule == rule]
