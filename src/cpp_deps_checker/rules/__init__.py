@@ -4,6 +4,7 @@ from cpp_deps_checker.rules import (
     _direct_layering,
     _entry_point,
     _self_contained,
+    _test_isolation,
 )
 from cpp_deps_checker.rules._core import Context, Level, Violation
 
@@ -15,6 +16,7 @@ _RULES = (
     _direct_layering.check,
     _self_contained.check,
     _entry_point.check,
+    _test_isolation.check,
 )
 
 

@@ -4,7 +4,7 @@ Checks that a CMake project's `target_link_libraries` graph is acyclic and defin
 
 ## Usage
 
-Configure the project with Clang, a File API query, a JSON trace, a compilation database, and interface header set verification, then check the build directory. Implemented so far: rule 1 (no cycles), rule 2 (definition order), rule 3 (direct layering), and rule 3a (self-contained headers).
+Configure the project with Clang, a File API query, a JSON trace, a compilation database, and interface header set verification, then check the build directory. Implemented so far: rule 1 (no cycles), rule 2 (definition order), rule 3 (direct layering), rule 3a (self-contained headers), rule 4 (entry point only), and rule 7 (test isolation). Test targets are those defined under the top-level `tests/` or `test/` directory; the patterns are not configurable yet.
 
 ```sh
 mkdir -p build/.cmake/api/v1/query
