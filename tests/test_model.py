@@ -161,7 +161,7 @@ def test_abstract_interface_library_lists_no_files(public_private: Model) -> Non
     assert c.sources == ()
     (headers,) = c.file_sets
     assert headers.visibility == "INTERFACE"
-    assert headers.base_directories == (root / "c" / "include",)
+    assert headers.base_directories == (root / "a" / "c" / "include",)
     assert headers.files == ()
 
 

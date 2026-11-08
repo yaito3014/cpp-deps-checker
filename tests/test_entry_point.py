@@ -12,7 +12,7 @@ def test_production_target_including_a_detail_header(tmp_path: Path) -> None:
         ("entry-point", Level.ERROR, Location(Path("b/b.cpp"), 2))
     ]
     assert violations[0].message == (
-        "b includes a/include/a/detail/impl.hpp, a detail header of a; "
+        "b includes b/a/include/a/detail/impl.hpp, a detail header of a; "
         "only a and test targets may include it"
     )
 
