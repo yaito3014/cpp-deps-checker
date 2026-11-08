@@ -4,6 +4,7 @@ from cpp_deps_checker.rules import (
     _direct_layering,
     _entry_point,
     _nesting,
+    _placement,
     _self_contained,
     _test_isolation,
 )
@@ -18,6 +19,7 @@ _RULES = (
     _self_contained.check,
     _entry_point.check,
     _nesting.check,
+    _placement.check,
     _test_isolation.check,
 )
 

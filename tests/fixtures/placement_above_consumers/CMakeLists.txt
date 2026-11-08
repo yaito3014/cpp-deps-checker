@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 4.2)
+project(placement_above_consumers LANGUAGES CXX)
+add_subdirectory(lexer)
+add_subdirectory(parser)
+add_executable(app main.cpp)
+target_link_libraries(app PRIVATE parser)

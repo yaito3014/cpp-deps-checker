@@ -91,3 +91,12 @@ def test_failure_outside_header_set_verification_is_unusable_input(
 
     assert main(["check", str(build.dir)]) == 2
     assert "missing.hpp" in capsys.readouterr().err
+
+
+def test_warnings_only_pass(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    build = configure(FIXTURES / "placement_above_consumers", tmp_path / "build")
+    capsys.readouterr()
+
+    assert main(["check", str(build.dir)]) == 0
+    (line,) = capsys.readouterr().out.splitlines()
+    assert line.startswith("lexer/CMakeLists.txt:1: warning: ")

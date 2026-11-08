@@ -22,7 +22,7 @@ Eight rules fail the check, one only warns, and two produce output. Every violat
 | 3a | Self-contained headers | Every header in a target's interface header sets preprocesses on its own with that target's usage requirements: its `CMAKE_VERIFY_INTERFACE_HEADER_SETS` translation unit passes the Clang `-E` pass. Reported at the compiler's first error. Only preprocessing is checked; building the verification targets catches the rest | error |
 | 4 | Entry point only | T2's `detail/` headers are included only by T2's own files and by test targets. T2's private headers are included only by T2's own files | error |
 | 5 | Nesting is privacy | A target nested under a parent directory (defined below) is consumed only by targets defined in that directory or below it. An outside consumer fails at its link with a "hoist: private detail is becoming shared API" message | error |
-| 6 | Placement | A target placed above the lowest common ancestor of its consumers (dominator tree over the production graph, rooted at the composition roots) | warning |
+| 6 | Placement | A target placed above the lowest common ancestor of its consumers: over the production graph, rooted at the composition roots, T's immediate dominator D is that ancestor, and T must be defined in D's directory or below it. Reported at T's definition. A target whose only dominator is the virtual root above several composition roots has no placement | warning |
 | 7 | Test isolation | No non-test target links a test target | error |
 | 8 | Graph | DOT or Mermaid generated from the same model | output |
 | 9 | New edges | Edges added relative to the base branch, listed in the job summary | output |
@@ -35,6 +35,7 @@ Definitions used by the rules:
 - **Detail header.** A public file with a `detail` directory component below the directory that gave it its owner: the file set base directory that contains it (the deepest, if several do), or the owner's source directory for a loose source or a file claimed through it. A `detail/` above that directory does not count, so a target defined inside some `detail/` directory does not make all its headers detail headers. A private file is never a detail header.
 - **Parent.** A target's parent directory is the nearest proper ancestor of its source directory that defines a production target other than a UTILITY target. Targets in one directory share one subtree, so the parent is a directory rather than a target, which works the same when a directory defines several targets. A parent at the top-level source directory constrains nothing.
 - **Production target.** A target that is not imported, not a test target, and not a header set verification target.
+- **Production graph.** The declared edges between production targets. Until the consumer config names the composition roots, every production target that no other production target links is one.
 - **Exceptions.** A rule may be broken only through an entry in the consumer config, and every entry must carry a `reason`.
 
 ## Inputs
@@ -180,7 +181,7 @@ Build test-first: each step starts with a fixture CMake project under `tests/fix
 4. **Rule 1, cycles.** Fixture: two static libraries linking each other; expect the cycle and the rule 2 error at the same link. One violation per strongly connected component, with the shortest cycle through its first member in the message. Self-loops need no handling: CMake rejects a non-INTERFACE target linking itself and drops an INTERFACE library's self-link from the reply (verified on CMake 4.4.5).
 5. **Include collection, header classification, and rule 3.** Fixtures: a header including a transitive-only dependency (error, which also needs `-fshow-skipped-includes`: the second include of the guarded header is skipped); a public header including a PRIVATE-linked dependency (error); the same with PUBLIC (clean). Classification and `-H` parsing are unit-tested on hand-built inputs. Without `compile_commands.json` at its default path, `check` warns and skips the include rules; an explicit `--compile-commands` that is missing is an error. Imported-target fixtures wait for the ownership decision below. Rule 3a: a public header that includes a header found only through a PRIVATE include directory (error); a TU outside header set verification that fails to preprocess (exit status 2).
 6. **Test classification, rule 4, and rule 7.** Fixtures: a non-test target including another target's `detail/` header (error); a test doing the same (clean); a test including a private header, reached through its own include directory (error); a production target linking a test helper, next to a test linking the same helper (one error). Detail headers and test identification are unit-tested on hand-built models.
-7. **Rules 5 and 6.** Fixtures: a nested target consumed from outside its parent (error); a target placed above its consumers' common ancestor (warning, exit code 0).
+7. **Rules 5 and 6.** Fixtures: a nested target consumed from outside its parent (error); a target placed above its consumers' common ancestor (warning, exit code 0). Dominators (diamonds, cycles, several roots, same-directory placement) and the exemptions are unit-tested on hand-built models. Rule 6 applies to every fixture, so the earlier fixtures nest each single-consumer dependency under its consumer to keep exactly one violation.
 8. **Report and Action.** Annotations, job summary with new edges against the base branch, graph output.
 
 The tool's own tests use pytest.
@@ -196,7 +197,7 @@ Open decisions:
 
 - [ ] Graph output: committed docs file diffed in CI, or a CI artifact.
 - [ ] Config file name and format (`.cpp-deps-checker.toml` proposed).
-- [ ] One feature target per directory is assumed by the parent definition; projects with several targets per directory need a rule.
+- [ ] Several targets per directory. Rule 5 is unaffected (the parent is a directory). Rule 6 accepts a target in the same directory as its dominator, so a target that should be nested in a subdirectory but shares its dominator's directory is not reported; tightening this to "strictly below" would warn on every multi-target directory.
 - [ ] Multi-config generators: which configuration the check reads.
 - [ ] Owner of an imported target's headers (rule 3). The reply has no include directories for imported targets. Candidates: (a) inject a script through `CMAKE_PROJECT_INCLUDE` that walks the directories' `IMPORTED_TARGETS` and writes each target's `INTERFACE_INCLUDE_DIRECTORIES` with `file(GENERATE)`, a fourth input, unverified; (b) match consumer `compileGroups` include paths to `linkLibraries` entries by backtrace, ambiguous when one call links several imported targets; (c) drop imported targets from rule 3.
 - [x] Type checker for the tool itself: ty.
