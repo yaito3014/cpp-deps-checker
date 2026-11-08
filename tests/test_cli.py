@@ -100,3 +100,19 @@ def test_warnings_only_pass(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
     assert main(["check", str(build.dir)]) == 0
     (line,) = capsys.readouterr().out.splitlines()
     assert line.startswith("lexer/CMakeLists.txt:1: warning: ")
+
+
+def test_annotations_are_relative_to_the_working_directory(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    build = configure(FIXTURES / "definition_order_late", tmp_path / "build")
+    capsys.readouterr()
+    monkeypatch.chdir(FIXTURES)
+
+    assert main(["check", str(build.dir), "--annotations"]) == 1
+
+    (line,) = capsys.readouterr().out.splitlines()
+    assert line.startswith(
+        "::error file=definition_order_late/CMakeLists.txt,line=5,"
+        "title=definition-order::a links late"
+    )

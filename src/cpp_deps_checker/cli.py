@@ -27,6 +27,12 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help="compilation database (default: BUILD_DIR/compile_commands.json)",
     )
+    check_command.add_argument(
+        "--annotations",
+        action="store_true",
+        help="print GitHub Actions workflow commands instead of text, with paths "
+        "relative to the current directory",
+    )
     return parser
 
 
@@ -84,6 +90,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"cpp-deps-checker: error: {error}", file=sys.stderr)
         return 2
     violations = check(ctx)
+    root = Path.cwd().resolve()
     for violation in violations:
-        print(report.text(violation))
+        print(
+            report.annotation(violation, ctx.model.source_dir, root)
+            if args.annotations
+            else report.text(violation)
+        )
     return 1 if any(v.level is Level.ERROR for v in violations) else 0
