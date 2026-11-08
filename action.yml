@@ -1,0 +1,55 @@
+name: cpp-deps-checker
+description: Check that a CMake project's target graph and header includes follow its layering rules
+inputs:
+  source-dir:
+    description: CMake source directory, relative to the repository root
+    default: .
+  cmake-args:
+    description: >-
+      Extra CMake configure arguments, split on whitespace without quoting.
+      The include rules preprocess with the configured compiler, which must
+      be Clang.
+    default: -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+  base-ref:
+    description: >-
+      Branch whose graph is the baseline for the new-edge list in the job
+      summary; empty skips the list. Defaults to the pull request's base
+      branch, so the list is empty on push events.
+    default: ${{ github.base_ref }}
+  artifact-name:
+    description: Name of the uploaded artifact holding the graph
+    default: cpp-deps-graph
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v6
+    - name: Install cpp-deps-checker
+      shell: sh
+      run: |
+        uv tool install --quiet "$GITHUB_ACTION_PATH"
+        uv tool dir --bin >>"$GITHUB_PATH"
+    - name: Check
+      id: check
+      shell: sh
+      env:
+        SOURCE_DIR: ${{ inputs.source-dir }}
+        CMAKE_ARGS: ${{ inputs.cmake-args }}
+        BASE_REF: ${{ inputs.base-ref }}
+        WORK_DIR: ${{ runner.temp }}/cpp-deps-checker
+      # The status is kept so that the graph is uploaded before the job fails.
+      run: |
+        SUMMARY_FILE=$GITHUB_STEP_SUMMARY "$GITHUB_ACTION_PATH/action/run.sh" ||
+          echo "status=$?" >>"$GITHUB_OUTPUT"
+    - name: Upload graph
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/cpp-deps-checker/graph.md
+        if-no-files-found: ignore
+    - name: Fail on errors
+      if: steps.check.outputs.status != ''
+      shell: sh
+      env:
+        STATUS: ${{ steps.check.outputs.status }}
+      run: exit "$STATUS"

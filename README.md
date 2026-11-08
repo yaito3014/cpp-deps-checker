@@ -24,6 +24,23 @@ Exit status: 0 when clean (or warnings only), 1 when any error is found, 2 when 
 
 `check --summary FILE` appends a Markdown summary of the violations to FILE (in GitHub Actions, `$GITHUB_STEP_SUMMARY`), and with `--baseline GRAPH`, a graph written by `graph` on the base branch, it also lists the edges that graph lacks.
 
+## GitHub Action
+
+```yaml
+on: pull_request
+jobs:
+  deps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: yaito3014/cpp-deps-checker@main
+        with:
+          source-dir: .  # CMake source directory, relative to the repository root
+          cmake-args: -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+```
+
+The runner needs CMake 4.2 or later, Clang, and whatever generator `cmake-args` names; the Action installs only uv, Python if the runner lacks 3.14, and the tool. It annotates the violations, writes a job summary with every violation and the edges new since `base-ref` (default: the pull request's base branch, configured a second time in a git worktree, without submodules), and uploads the graph as the artifact `artifact-name` (default `cpp-deps-graph`). `cmake-args` is split on whitespace, without quoting.
+
 ## Development
 
 ```sh
@@ -32,4 +49,5 @@ uv run ruff format --check
 uv run ruff check
 uv run ty check
 uv run pytest
+uvx --from shellcheck-py shellcheck action/*.sh
 ```

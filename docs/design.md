@@ -120,10 +120,14 @@ The tool is a uv-installable Python package plus a thin composite GitHub Action,
 
 The three names change together if the codename is replaced.
 
-The Action runs these steps:
+The Action (`action.yml`, composite) runs these steps, the shell parts in `action/run.sh`:
 
-1. Configure the consumer project with a File API `codemodel-v2` query, the JSON trace, `CMAKE_EXPORT_COMPILE_COMMANDS=ON`, `CMAKE_OPTIMIZE_DEPENDENCIES=OFF`, and `CMAKE_VERIFY_INTERFACE_HEADER_SETS=ON`.
-2. Run `cpp-deps-checker check`, which also runs the Clang `-H` pass over `compile_commands.json`, emitting `::error` and `::warning` annotations, the new-edge list in the job summary, and the graph.
+1. Install the tool with uv from the Action's own checkout.
+2. Configure the consumer project with `action/configure.sh`, which the tests use too: a File API `codemodel-v2` query, the JSON trace, `CMAKE_EXPORT_COMPILE_COMMANDS=ON`, `CMAKE_OPTIMIZE_DEPENDENCIES=OFF`, and `CMAKE_VERIFY_INTERFACE_HEADER_SETS=ON`, plus the `cmake-args` input (default: the Clang compilers).
+3. Write the graph with `cpp-deps-checker graph`.
+4. If `base-ref` is set (default: the pull request's base branch), fetch its tip (`--depth=1` only if the clone is already shallow), check it out in a git worktree, configure the same source directory there, and write its graph as the baseline. If any of this fails, warn and leave the new edges unlisted.
+5. Run `cpp-deps-checker check --annotations --summary "$GITHUB_STEP_SUMMARY"`, with `--baseline` when step 4 succeeded. It also runs the Clang `-H` pass over `compile_commands.json`.
+6. Upload the graph as an artifact, then fail the job if the check failed.
 
 The consumer repository holds one config file. Proposed name `.cpp-deps-checker.toml` (not yet decided), with these keys:
 
@@ -182,7 +186,7 @@ Build test-first: each step starts with a fixture CMake project under `tests/fix
 5. **Include collection, header classification, and rule 3.** Fixtures: a header including a transitive-only dependency (error, which also needs `-fshow-skipped-includes`: the second include of the guarded header is skipped); a public header including a PRIVATE-linked dependency (error); the same with PUBLIC (clean). Classification and `-H` parsing are unit-tested on hand-built inputs. Without `compile_commands.json` at its default path, `check` warns and skips the include rules; an explicit `--compile-commands` that is missing is an error. Imported-target fixtures wait for the ownership decision below. Rule 3a: a public header that includes a header found only through a PRIVATE include directory (error); a TU outside header set verification that fails to preprocess (exit status 2).
 6. **Test classification, rule 4, and rule 7.** Fixtures: a non-test target including another target's `detail/` header (error); a test doing the same (clean); a test including a private header, reached through its own include directory (error); a production target linking a test helper, next to a test linking the same helper (one error). Detail headers and test identification are unit-tested on hand-built models.
 7. **Rules 5 and 6.** Fixtures: a nested target consumed from outside its parent (error); a target placed above its consumers' common ancestor (warning, exit code 0). Dominators (diamonds, cycles, several roots, same-directory placement) and the exemptions are unit-tested on hand-built models. Rule 6 applies to every fixture, so the earlier fixtures nest each single-consumer dependency under its consumer to keep exactly one violation.
-8. **Report and Action.** Annotations, job summary with new edges against the base branch, graph output.
+8. **Report and Action.** Annotations, job summary with new edges against the base branch, graph output. Formats are unit-tested on hand-built inputs, including a Mermaid round trip; the CLI options on fixtures; `action/run.sh` end to end on a local git origin whose base branch lacks an edge (shallow and full clones), whose base does not configure, and with no base ref. `action.yml` itself is checked only with actionlint, through a workflow that uses it locally; it has not run on GitHub.
 
 The tool's own tests use pytest.
 
@@ -195,7 +199,7 @@ These claims are approximate until checked, most of them in step 2 or step 5:
 
 Open decisions:
 
-- [ ] Graph output: committed docs file diffed in CI, or a CI artifact.
+- [x] Graph output: a CI artifact, Mermaid in Markdown (decided 2026-11-08, over a committed docs file). The new-edge baseline therefore comes from configuring the base branch a second time on every pull request, and a base branch that does not configure leaves the new edges unlisted.
 - [ ] Config file name and format (`.cpp-deps-checker.toml` proposed).
 - [ ] Several targets per directory. Rule 5 is unaffected (the parent is a directory). Rule 6 accepts a target in the same directory as its dominator, so a target that should be nested in a subdirectory but shares its dominator's directory is not reported; tightening this to "strictly below" would warn on every multi-target directory.
 - [ ] Multi-config generators: which configuration the check reads.
