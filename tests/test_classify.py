@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from cpp_deps_checker.classify import Owner, classify
+from cpp_deps_checker.classify import Owner, classify, find_tests
 from tests.factories import ROOT, headers, model, target
 
 
@@ -93,3 +93,125 @@ def test_header_set_verification_target_owns_nothing() -> None:
 
     assert owners.of(ROOT / "a/x.hpp") == Owner("a", public=False)
     assert owners.of(ROOT / "build/a/a.hpp.cxx") is None
+
+
+def test_detail_below_the_file_set_base_directory() -> None:
+    a = target(
+        "a",
+        type="STATIC_LIBRARY",
+        source_dir=ROOT / "detail/a",
+        file_sets=[
+            headers(
+                "PUBLIC",
+                ROOT / "detail/a/include/a/a.hpp",
+                ROOT / "detail/a/include/a/detail/impl.hpp",
+                base_directories=[ROOT / "detail/a/include"],
+            ),
+            headers(
+                "PRIVATE",
+                ROOT / "detail/a/src/detail/p.hpp",
+                base_directories=[ROOT / "detail/a/src"],
+            ),
+        ],
+    )
+    owners = classify(model(a))
+
+    # The detail/ above the base directory does not count.
+    assert owners.of(ROOT / "detail/a/include/a/a.hpp") == Owner("a", public=True)
+    assert owners.of(ROOT / "detail/a/include/a/detail/impl.hpp") == Owner(
+        "a", public=True, detail=True
+    )
+    # Only public headers are detail headers; a private one stays private.
+    assert owners.of(ROOT / "detail/a/src/detail/p.hpp") == Owner("a", public=False)
+
+
+def test_detail_below_a_base_directory_without_files() -> None:
+    c = target(
+        "c",
+        source_dir=ROOT / "detail/c",
+        file_sets=[headers("INTERFACE", base_directories=[ROOT / "detail/c/include"])],
+    )
+    owners = classify(model(c))
+
+    assert owners.of(ROOT / "detail/c/include/c.hpp") == Owner("c", public=True)
+    assert owners.of(ROOT / "detail/c/include/detail/x.hpp") == Owner(
+        "c", public=True, detail=True
+    )
+
+
+def test_detail_below_the_source_directory() -> None:
+    i = target(
+        "i",
+        source_dir=ROOT / "detail/i",
+        sources=[ROOT / "detail/i/i.hpp", ROOT / "detail/i/detail/listed.hpp"],
+    )
+    owners = classify(model(i))
+
+    assert owners.of(ROOT / "detail/i/i.hpp") == Owner("i", public=True)
+    assert owners.of(ROOT / "detail/i/detail/listed.hpp") == Owner(
+        "i", public=True, detail=True
+    )
+    assert owners.of(ROOT / "detail/i/detail/x.hpp") == Owner(
+        "i", public=True, detail=True
+    )
+    # A file named detail is not in a detail/ directory.
+    assert owners.of(ROOT / "detail/i/detail") == Owner("i", public=True)
+
+
+def test_detail_counts_from_the_deepest_base_directory() -> None:
+    a = target(
+        "a",
+        type="STATIC_LIBRARY",
+        file_sets=[
+            headers(
+                "PUBLIC",
+                ROOT / "a/detail/include/a/a.hpp",
+                base_directories=[ROOT / "a", ROOT / "a/detail/include"],
+            )
+        ],
+    )
+    owners = classify(model(a))
+
+    assert owners.of(ROOT / "a/detail/include/a/a.hpp") == Owner("a", public=True)
+
+
+def test_tests_by_defining_directory() -> None:
+    names = {
+        "top": ROOT / "tests",
+        "nested": ROOT / "tests/unit",
+        "singular": ROOT / "test",
+        "deeper": ROOT / "src/tests",
+        "lookalike": ROOT / "testsuite",
+        "production": ROOT / "src",
+    }
+    m = model(*(target(n, source_dir=d) for n, d in names.items()))
+
+    assert find_tests(m) == {"top", "nested", "singular"}
+
+
+def test_tests_by_name_pattern() -> None:
+    m = model(target("a_test", source_dir=ROOT / "src"), target("a"))
+    assert find_tests(m, directories=(), names=("*_test",)) == {"a_test"}
+
+
+def test_imported_targets_are_never_tests() -> None:
+    m = model(target("ext", imported=True, source_dir=ROOT / "tests"))
+    assert find_tests(m) == set()
+
+
+def test_verification_target_follows_the_target_it_verifies() -> None:
+    m = model(
+        target("a_test", source_dir=ROOT / "src"),
+        target(
+            "a_test_verify_interface_header_sets",
+            source_dir=ROOT / "src",
+            verifies="a_test",
+        ),
+        target("b"),
+        target("b_verify_interface_header_sets", verifies="b"),
+    )
+
+    assert find_tests(m, directories=(), names=("*_test",)) == {
+        "a_test",
+        "a_test_verify_interface_header_sets",
+    }
