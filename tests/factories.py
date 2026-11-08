@@ -1,7 +1,9 @@
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
+from cpp_deps_checker.classify import classify, find_tests
 from cpp_deps_checker.model import Dependency, FileSet, Model, Target
+from cpp_deps_checker.rules import Context, check
 
 ROOT = Path("/project")
 
@@ -49,3 +51,32 @@ def headers(
 
 def model(*targets: Target) -> Model:
     return Model(targets={t.id: t for t in targets}, source_dir=ROOT)
+
+
+def placed(
+    name: str,
+    directory: str,
+    *links: str,
+    type: str = "INTERFACE_LIBRARY",
+    imported: bool = False,
+    verifies: str | None = None,
+) -> Target:
+    """A target defined in ROOT / directory with the given interface links."""
+    return target(
+        name,
+        type=type,
+        source_dir=ROOT / directory,
+        links=links,
+        imported=imported,
+        verifies=verifies,
+    )
+
+
+def messages(rule: str, *targets: Target) -> list[str]:
+    """Messages of one rule's violations in a model of the given targets,
+    classified with the default test patterns and no include edges."""
+    m = model(*targets)
+    ctx = Context(
+        model=m, includes=(), failures=(), owners=classify(m), tests=find_tests(m)
+    )
+    return [v.message for v in check(ctx) if v.rule == rule]

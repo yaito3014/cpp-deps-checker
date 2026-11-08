@@ -3,7 +3,7 @@ from enum import StrEnum
 
 from cpp_deps_checker.classify import Owners
 from cpp_deps_checker.includes import Failure, Include
-from cpp_deps_checker.model import Location, Model
+from cpp_deps_checker.model import Location, Model, Target
 
 
 class Level(StrEnum):
@@ -20,6 +20,15 @@ class Context:
     failures: tuple[Failure, ...]
     owners: Owners
     tests: frozenset[str]  # ids of test targets
+
+    def production(self) -> dict[str, Target]:
+        """Targets the privacy and placement rules apply to, by id: not
+        imported, not tests, and not header set verification targets."""
+        return {
+            t.id: t
+            for t in self.model.targets.values()
+            if not t.imported and t.id not in self.tests and t.verifies is None
+        }
 
 
 @dataclass(frozen=True)

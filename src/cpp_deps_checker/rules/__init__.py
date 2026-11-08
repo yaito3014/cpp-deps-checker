@@ -3,6 +3,7 @@ from cpp_deps_checker.rules import (
     _definition_order,
     _direct_layering,
     _entry_point,
+    _nesting,
     _self_contained,
     _test_isolation,
 )
@@ -16,6 +17,7 @@ _RULES = (
     _direct_layering.check,
     _self_contained.check,
     _entry_point.check,
+    _nesting.check,
     _test_isolation.check,
 )
 
