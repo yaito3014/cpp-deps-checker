@@ -128,6 +128,15 @@ def test_imported_targets_are_marked(definitions: Model) -> None:
     assert not _target(definitions, "first").imported
 
 
+def test_top_level_directories(tmp_path: Path) -> None:
+    build = configure(FIXTURES / "minimal", tmp_path / "build")
+
+    model = load(build.dir, build.trace)
+
+    assert model.source_dir == (FIXTURES / "minimal").resolve()
+    assert model.build_dir == build.dir.resolve()
+
+
 def test_missing_reply_is_reported(tmp_path: Path) -> None:
     with pytest.raises(MissingReplyError, match="no File API reply"):
         load(tmp_path, tmp_path / "trace.json")

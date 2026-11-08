@@ -6,6 +6,7 @@ from cpp_deps_checker.model import Dependency, FileSet, Model, Target
 from cpp_deps_checker.rules import Context, check
 
 ROOT = Path("/project")
+BUILD = Path("/build")
 
 
 def target(
@@ -50,7 +51,7 @@ def headers(
 
 
 def model(*targets: Target) -> Model:
-    return Model(targets={t.id: t for t in targets}, source_dir=ROOT)
+    return Model(targets={t.id: t for t in targets}, source_dir=ROOT, build_dir=BUILD)
 
 
 def placed(

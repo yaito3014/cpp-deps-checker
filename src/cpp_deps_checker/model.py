@@ -99,7 +99,9 @@ class Target:
 @dataclass(frozen=True)
 class Model:
     targets: Mapping[str, Target]  # by id
-    source_dir: Path  # top-level, absolute and resolved
+    # Top-level, absolute and resolved.
+    source_dir: Path
+    build_dir: Path
 
     def locate(self, path: Path, line: int | None) -> Location:
         """Location of an absolute path, in the form the File API uses."""
@@ -267,5 +269,7 @@ def load(build_dir: Path, trace: Path) -> Model:
         for entry in entries
     )
     return Model(
-        targets={target.id: target for target in targets}, source_dir=source_dir
+        targets={target.id: target for target in targets},
+        source_dir=source_dir,
+        build_dir=Path(codemodel["paths"]["build"]).resolve(),
     )
