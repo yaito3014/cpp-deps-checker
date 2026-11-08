@@ -2,6 +2,7 @@ from cpp_deps_checker.rules import (
     _cycles,
     _definition_order,
     _direct_layering,
+    _entry_point,
     _self_contained,
 )
 from cpp_deps_checker.rules._core import Context, Level, Violation
@@ -13,6 +14,7 @@ _RULES = (
     _definition_order.check,
     _direct_layering.check,
     _self_contained.check,
+    _entry_point.check,
 )
 
 

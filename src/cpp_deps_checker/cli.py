@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from cpp_deps_checker import report
-from cpp_deps_checker.classify import classify
+from cpp_deps_checker.classify import classify, find_tests
 from cpp_deps_checker.includes import IncludeError, collect
 from cpp_deps_checker.model import ReplyError, load
 from cpp_deps_checker.rules import Context, Level, check
@@ -38,8 +38,13 @@ def context(build_dir: Path, trace: Path, compile_commands: Path | None) -> Cont
     """
     model = load(build_dir, trace)
     owners = classify(model)
+    # The consumer config that will set the test patterns is not designed
+    # yet (docs/design.md), so the defaults apply.
+    tests = find_tests(model)
     if compile_commands is None:
-        return Context(model=model, includes=(), failures=(), owners=owners)
+        return Context(
+            model=model, includes=(), failures=(), owners=owners, tests=tests
+        )
     collection = collect(
         compile_commands, keep=lambda path: owners.of(path) is not None
     )
@@ -53,6 +58,7 @@ def context(build_dir: Path, trace: Path, compile_commands: Path | None) -> Cont
         includes=collection.includes,
         failures=collection.failures,
         owners=owners,
+        tests=tests,
     )
 
 

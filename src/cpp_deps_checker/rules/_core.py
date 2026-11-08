@@ -19,6 +19,7 @@ class Context:
     # the input unusable.
     failures: tuple[Failure, ...]
     owners: Owners
+    tests: frozenset[str]  # ids of test targets
 
 
 @dataclass(frozen=True)
