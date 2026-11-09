@@ -231,7 +231,7 @@ The plugin must be built with the same LLVM version as the tool that loads it, a
 ### Build and dependencies
 
 - C++23, set with `target_compile_features`; CMake with FILE_SET public headers per target.
-- vcpkg for third-party libraries: glaze (JSON; needs C++23, built and tested by its authors with Clang 19+ and GCC 13+) and Catch2 for unit tests.
+- vcpkg for third-party libraries: glaze (JSON; needs C++23, built and tested by its authors with Clang 19+ and GCC 13+), CLI11 for the command line's arguments, and Catch2 for unit tests. A usage error exits 2, as argparse does.
 - LLVM 24 from the system (`find_package(LLVM 24 CONFIG)`), not vcpkg, and its `clang-cpp` library found next to it; Clang's own CMake package is not used, because on apt.llvm.org it also requires MLIR's. Only the `clang/` targets link them, for the plugin and the command line alike. libTooling finds Clang's builtin headers relative to `libclang-cpp`, so translation units get LLVM 24's whatever compiler their compile command names. Until LLVM 24 is released, CI installs apt.llvm.org's development snapshot.
 
 ### Testing
@@ -243,7 +243,6 @@ The plugin must be built with the same LLVM version as the tool that loads it, a
 ### Open questions
 
 - How the Action ships the C++ command line: per-platform release binaries, or a source build on the runner (which then needs LLVM 24 development packages).
-- Whether the command line keeps the Python's output byte for byte; `expected.txt` assumes it does.
 
 ## Unverified claims and open items
 

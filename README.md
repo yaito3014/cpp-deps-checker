@@ -54,6 +54,14 @@ uvx --from shellcheck-py shellcheck action/*.sh
 uvx --from actionlint-py actionlint
 ```
 
-Each fixture's `expected.txt` holds the exit status and standard output of `check` on it. `CPP_DEPS_CHECKER=<command> uv run pytest tests/test_expected.py` checks another implementation against them.
+The C++ rewrite (see docs/design.md) builds with CMake, vcpkg (`VCPKG_ROOT` set) and LLVM 24 in `/usr/lib/llvm-24`:
+
+```sh
+cmake --preset default
+cmake --build --preset default
+ctest --preset default
+```
+
+Each fixture's `expected.txt` holds the exit status and standard output of `check` on it. The C++ tests check `build/default/cli/cpp-deps-checker` against them, and `CPP_DEPS_CHECKER=<command> uv run pytest tests/test_expected.py` checks any implementation.
 
 The workflows' action dependencies are locked in `.github/workflows/actions.lock`. After changing a `uses:` line in a workflow or in `action.yml`, regenerate it with `gh actions-lock` (the `github/gh-actions-lock` extension).
