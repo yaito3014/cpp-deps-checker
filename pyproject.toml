@@ -3,6 +3,8 @@ name = "cpp-deps-checker"
 version = "0.1.0"
 description = "Check that a CMake project's target graph and header includes follow its layering rules"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "yaito3014", email = "ykakeyama3014@gmail.com" }
 ]
