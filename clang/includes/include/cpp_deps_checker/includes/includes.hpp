@@ -3,6 +3,7 @@
 
 #include <cpp_deps_checker/rules/rules.hpp>
 
+#include <clang/Basic/SourceLocation.h>
 #include <clang/Basic/SourceManager.h>
 #include <clang/Lex/PPCallbacks.h>
 
@@ -11,7 +12,9 @@
 
 namespace cpp_deps_checker::includes {
 
-using sink = std::function<void(rules::include)>;
+// An include directive, and the range of its file name as spelled; the range
+// is invalid for a header given with -include.
+using sink = std::function<void(rules::include, ::clang::CharSourceRange)>;
 
 // Preprocessor callbacks that pass on_include each include directive the
 // preprocessor runs and finds a file for, a header its include guard skips

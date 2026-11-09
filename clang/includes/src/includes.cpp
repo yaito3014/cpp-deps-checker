@@ -19,7 +19,7 @@ public:
   recording_callbacks(::clang::SourceManager const& sources, sink on_include) : sources_{sources}, on_include_{std::move(on_include)} {}
 
   void InclusionDirective(
-      ::clang::SourceLocation hash, ::clang::Token const&, ::llvm::StringRef, bool, ::clang::CharSourceRange, ::clang::OptionalFileEntryRef file,
+      ::clang::SourceLocation hash, ::clang::Token const&, ::llvm::StringRef, bool, ::clang::CharSourceRange filename, ::clang::OptionalFileEntryRef file,
       ::llvm::StringRef, ::llvm::StringRef, ::clang::Module const*, bool, ::clang::SrcMgr::CharacteristicKind
   ) override
   {
@@ -30,10 +30,10 @@ public:
     if (includer) {
       // The spelling line counts the file's own lines, which #line does not
       // renumber.
-      on_include_({path_of(*includer), path_of(*file), static_cast<int>(sources_.getSpellingLineNumber(hash))});
+      on_include_({path_of(*includer), path_of(*file), static_cast<int>(sources_.getSpellingLineNumber(hash))}, filename);
     } else if (auto const main = sources_.getFileEntryRefForID(sources_.getMainFileID())) {
       // In the predefines buffer: a header given with -include.
-      on_include_({path_of(*main), path_of(*file), std::nullopt});
+      on_include_({path_of(*main), path_of(*file), std::nullopt}, {});
     }
   }
 
