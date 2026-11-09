@@ -150,8 +150,8 @@ Each feature is a CMake target, and the `target_link_libraries` graph is the dep
 core/
   config/     # .cpp-deps-checker.yaml -> config
   model/      # File API reply + trace -> Model
-  ownership/  # Model -> file owners and kinds, test and external targets
   rules/      # Context -> violations; also the per-include check for the plugin
+    ownership/  # Model -> file owners and kinds, test and external targets
 cli/
   report/     # text, GitHub annotations, job summary, Mermaid graph
   main        # composition root of the command line
@@ -168,7 +168,7 @@ The one design decision each target hides:
 
 - `config`: the config file's name, location and format.
 - `model`: how CMake exposes targets, edges and definition order (File API fields, trace format).
-- `ownership`: which target owns a file, whether it is public, private or `detail/`, and which targets are tests or external.
+- `rules/ownership`: which target owns a file, whether it is public, private or `detail/`, and which targets are tests or external.
 - `rules`: the policy of each rule. `rules` owns the include record and the `rules::context` it checks, so the collectors depend on `rules`, not the other way round.
 - `report`: output formats and CI annotation syntax.
 - `clang/includes`: how includes are read from Clang (which callbacks, physical line from the hash location).
@@ -176,7 +176,7 @@ The one design decision each target hides:
 - `clang/tidy`: how the checks run inside clang-tidy and clangd (registration, the build directory of a translation unit, where diagnostics go).
 - `clang/tidy/cache`: when a build directory's rule context is loaded again.
 
-Allowed edges, in topological order: `config`; `model`; `ownership` -> `model`; `rules` -> `config`, `ownership`, `model`; `report` -> `rules`, `model`; `clang/includes` -> `rules`; `clang/collect` -> `clang/includes`; `clang/tidy/cache` -> `rules`, `config`, `model`; `clang/tidy` -> `clang/tidy/cache`, `clang/includes`, `rules`; the command line -> everything but `clang/tidy`. `testing` -> `model` (it builds projects by hand), and only tests link it.
+Allowed edges, in topological order: `config`; `model`; `rules/ownership` -> `model`; `rules` -> `config`, `rules/ownership`, `model`; `report` -> `rules`, `model`; `clang/includes` -> `rules`; `clang/collect` -> `clang/includes`; `clang/tidy/cache` -> `rules`, `config`, `model`; `clang/tidy` -> `clang/tidy/cache`, `clang/includes`, `rules`; the command line -> everything but `clang/tidy` and `rules/ownership`, which it reaches through the rule context. `testing` -> `model` (it builds projects by hand), and only tests link it.
 
 Rules need more than the model: rules 3 and 4 need include edges, and rules 4 to 7 need the test targets. `rules` therefore owns `rules::context` (the project, the includes, the failed header set verification TUs, the owners, and the test and external targets) and `rules::violation`. `rules::check(ctx)` runs every rule, and `rules::check_include` runs rules 3 and 4 on one include for the plugin. `rules::make_context` applies the config to a project, with the defaults for what it leaves unset; the command line builds the context from `model`, `config`, `rules`, and `collect`. Exceptions from the consumer config will be applied once, after all rules run, not inside each rule.
 
