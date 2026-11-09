@@ -207,6 +207,7 @@ clang/
   includes/   # PPCallbacks -> include records, shared by the collector and the plugin
   collect/    # libTooling run over compile_commands.json (used by cli)
   tidy/       # clang-tidy module, loaded by clang-tidy --load and clangd --load
+testing/      # test support: configures fixtures through action/configure.sh
 ```
 
 The one design decision each target hides:
@@ -219,7 +220,7 @@ The one design decision each target hides:
 - `clang/collect`: how translation units are run in-process (libTooling over the compilation database).
 - `clang/tidy`: how the check reaches the model from inside clang-tidy and clangd.
 
-Allowed edges, in topological order: `model`; `ownership` -> `model`; `rules` -> `ownership`, `model`; `report` -> `rules`, `model`; `clang/includes` -> `rules`; `clang/collect` -> `clang/includes`; `clang/tidy` -> `clang/includes`, `rules`, `ownership`, `model`; the command line -> everything but `clang/tidy`.
+Allowed edges, in topological order: `model`; `ownership` -> `model`; `rules` -> `ownership`, `model`; `report` -> `rules`, `model`; `clang/includes` -> `rules`; `clang/collect` -> `clang/includes`; `clang/tidy` -> `clang/includes`, `rules`, `ownership`, `model`; the command line -> everything but `clang/tidy`. `testing` depends on nothing and only tests link it.
 
 ### Plugin
 
