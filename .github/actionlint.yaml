@@ -7,5 +7,5 @@ paths:
   .github/workflows/ci.yml:
     ignore:
       # The lockfile needs the same-repo action as $/, which actionlint 1.7.12
-      # does not know: https://gh.io/actions-lockfile
+      # does not know: https://github.com/rhysd/actionlint/issues/711
       - 'specifying action "\$/" in invalid format'
