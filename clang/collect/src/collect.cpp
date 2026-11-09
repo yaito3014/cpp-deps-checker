@@ -13,6 +13,7 @@
 #include <llvm/ADT/SmallString.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include <format>
 #include <optional>
 #include <set>
 #include <utility>
@@ -96,7 +97,7 @@ std::expected<collection, std::string> collect(std::filesystem::path const& comp
   auto const database =
       ::clang::tooling::JSONCompilationDatabase::loadFromFile(compile_commands.string(), error, ::clang::tooling::JSONCommandLineSyntax::AutoDetect);
   if (!database) {
-    return std::unexpected{std::move(error)};
+    return std::unexpected{std::format("cannot read {}: {}", compile_commands.string(), error)};
   }
 
   std::set<rules::include> found;
