@@ -110,6 +110,24 @@ def test_build_directory_inside_the_source_tree_is_claimed_only_by_listing() -> 
     assert owners.of(ROOT / "top.hpp") == Owner("top", public=False)
 
 
+def test_build_directory_inside_a_file_set_base_directory_is_unclaimed() -> None:
+    a = target(
+        "a",
+        source_dir=ROOT,
+        file_sets=[headers("INTERFACE", base_directories=[ROOT])],
+    )
+    g = target(
+        "g",
+        source_dir=ROOT / "g",
+        file_sets=[headers("INTERFACE", base_directories=[ROOT / "build/g/include"])],
+    )
+    owners = classify(model(a, g, build_dir=ROOT / "build"))
+
+    assert owners.of(ROOT / "build/b/verify/b.hpp.cxx") is None
+    assert owners.of(ROOT / "build/g/include/g.hpp") == Owner("g", public=True)
+    assert owners.of(ROOT / "a.hpp") == Owner("a", public=True)
+
+
 def test_imported_and_utility_targets_own_nothing() -> None:
     ext = target("ext", imported=True, sources=[ROOT / "ext/e.hpp"])
     util = target("util", type="UTILITY", sources=[ROOT / "util/u.txt"])

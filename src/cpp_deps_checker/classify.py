@@ -202,10 +202,11 @@ def classify(model: Model) -> Owners:
     ]
     source_directories += [(t.source_dir, None) for t in shadowing]
     # Generated files, such as header set verification sources, belong only
-    # to a target that lists them, not to the target whose source directory
-    # holds the build directory.
+    # to a target that lists them or a base directory inside the build
+    # directory, not to a target whose base or source directory holds it.
     build = _nested_build_dir(model)
     if build is not None:
+        base_directories.append((build, None))
         source_directories.append((build, None))
     return Owners(
         listed=_index(listed, _merge_owners),
