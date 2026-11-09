@@ -57,6 +57,15 @@ struct violation {
   friend bool operator==(violation const&, violation const&) = default;
 };
 
+// An exception from the config: the targets it names, as ids, in the order of
+// its rule's keys (from and to, the target, or a cycle's members).
+struct exception {
+  std::string rule;
+  std::vector<std::string> targets;
+
+  friend bool operator==(exception const&, exception const&) = default;
+};
+
 // Every rule's input.
 struct context {
   model::project project;
@@ -71,6 +80,7 @@ struct context {
   std::set<std::string> external;  // ids of targets whose code is not the project's
   // Ids; unset, every production target that no production target links is one.
   std::optional<std::vector<std::string>> composition_roots;
+  std::vector<exception> exceptions;
 
   // Targets the privacy and placement rules apply to, in model order: not
   // external, not tests, and not header set verification targets.

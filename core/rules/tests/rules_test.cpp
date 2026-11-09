@@ -604,3 +604,122 @@ TEST_CASE("an empty config keeps the defaults")
   REQUIRE(ctx);
   CHECK(ctx->tests == std::set<std::string>{"a_test"});
 }
+
+// Exceptions
+
+namespace {
+
+std::vector<rules::violation> checked(
+    model::project project, std::vector<config::exception> exceptions, std::optional<std::vector<rules::include>> includes = std::nullopt
+)
+{
+  auto ctx = rules::make_context(std::move(project), {.exceptions = std::move(exceptions)});
+  if (!ctx) {
+    throw std::runtime_error{ctx.error()};
+  }
+  ctx->includes = std::move(includes);
+  return rules::check(*ctx);
+}
+
+}  // namespace
+
+TEST_CASE("an exception allows a cycle among exactly its targets, in any order")
+{
+  auto const project = testing::project({placed("a", "a", {"b"}), placed("b", "b", {"a"})});
+  REQUIRE_FALSE(of_rule("no-cycles", checked(project, {})).empty());
+
+  CHECK(checked(project, {{.rule = "no-cycles", .targets = std::vector<std::string>{"b", "a"}, .reason = "legacy"}}).empty());
+}
+
+TEST_CASE("an exception allows a rule's violations from one target to another")
+{
+  auto const project = includes_context({}).project;
+  std::vector<rules::include> const includes{{root / "a/a.cpp", root / "d/d.hpp", 2}, {root / "a/src/impl.hpp", root / "d/d.hpp", 3}};
+  std::vector<config::exception> const exceptions{{.rule = "direct-layering", .from = "a", .to = "d", .reason = "moving"}};
+  REQUIRE(of_rule("direct-layering", checked(project, {}, includes)).size() == 2);
+
+  auto const violations = checked(project, exceptions, includes);
+
+  CHECK(of_rule("direct-layering", violations).empty());
+  CHECK(of_rule("stale-exception", violations).empty());
+  auto ctx = rules::make_context(project, {.exceptions = exceptions});
+  REQUIRE(ctx);
+  CHECK(rules::check_include(*ctx, includes.front()).empty());
+}
+
+TEST_CASE("an exception may name a test target")
+{
+  auto const project = testing::project({placed("app", "app", {"helper"}), placed("helper", "tests")});
+  REQUIRE_FALSE(of_rule("test-isolation", checked(project, {})).empty());
+
+  CHECK(checked(project, {{.rule = "test-isolation", .from = "app", .to = "helper", .reason = "shared fake"}}).empty());
+}
+
+TEST_CASE("an exception allows a rule's violation about one target")
+{
+  auto const project = testing::project({placed("cli", "cli", {"core"}), placed("core", "core")});
+  REQUIRE_FALSE(of_rule("placement", checked(project, {})).empty());
+
+  CHECK(checked(project, {{.rule = "placement", .target = "core", .reason = "loaded by plugins"}}).empty());
+}
+
+TEST_CASE("an exception that matches no violation is a warning at the config file")
+{
+  auto const project = includes_context({}).project;
+  std::vector<rules::include> const includes{{root / "a/a.cpp", root / "d/d.hpp", 2}};
+
+  auto const violations = checked(project, {{.rule = "direct-layering", .from = "a", .to = "c", .reason = "moving"}}, includes);
+
+  CHECK(
+      of_rule("direct-layering", violations)
+      == std::vector<rules::violation>{{"direct-layering", level::error, "a includes d/d.hpp of d without linking d directly", at("a/a.cpp", 2)}}
+  );
+  CHECK(
+      of_rule("stale-exception", violations)
+      == std::vector<rules::violation>{
+          {"stale-exception", level::warning, "exception to direct-layering from a to c matches no violation",
+           model::location{std::string{config::file_name}, std::nullopt}},
+      }
+  );
+}
+
+TEST_CASE("exceptions to the include rules are not stale when includes were not collected")
+{
+  auto const project = includes_context({}).project;
+
+  auto const violations = checked(
+      project, {
+                   {.rule = "direct-layering", .from = "a", .to = "c", .reason = "moving"},
+                   {.rule = "entry-point", .from = "a", .to = "c", .reason = "moving"},
+                   {.rule = "self-contained", .target = "c", .reason = "generated"},
+                   {.rule = "placement", .target = "a", .reason = "loaded by plugins"},
+               }
+  );
+
+  auto const stale = of_rule("stale-exception", violations);
+  REQUIRE(stale.size() == 1);
+  CHECK(stale.front().message == "exception to placement for a matches no violation");
+}
+
+TEST_CASE("an exception must name a known rule with its keys, known targets, and a reason")
+{
+  auto const project = testing::project({placed("a", "a"), placed("b", "b")});
+  auto const [entry, error] = GENERATE(
+      table<config::exception, std::string>({
+          {{.rule = "cycles", .targets = std::vector<std::string>{"a", "b"}, .reason = "r"}, "exceptions[0]: unknown rule cycles"},
+          {{.targets = std::vector<std::string>{"a", "b"}, .reason = "r"}, "exceptions[0]: needs a rule"},
+          {{.rule = "placement", .target = "a"}, "exceptions[0]: needs a reason"},
+          {{.rule = "direct-layering", .from = "a", .reason = "r"}, "exceptions[0]: direct-layering takes from and to"},
+          {{.rule = "placement", .from = "a", .to = "b", .reason = "r"}, "exceptions[0]: placement takes target"},
+          {{.rule = "placement", .target = "a", .targets = std::vector<std::string>{"a"}, .reason = "r"}, "exceptions[0]: placement takes target"},
+          {{.rule = "no-cycles", .targets = std::vector<std::string>{}, .reason = "r"}, "exceptions[0]: no-cycles takes targets"},
+          {{.rule = "placement", .target = "missing", .reason = "r"}, "exceptions[0]: no target named missing"},
+      })
+  );
+  CAPTURE(error);
+
+  auto const ctx = rules::make_context(project, {.exceptions = std::vector{entry}});
+
+  REQUIRE_FALSE(ctx);
+  CHECK(ctx.error() == error);
+}
