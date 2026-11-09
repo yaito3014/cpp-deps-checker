@@ -7,3 +7,5 @@ include(CTest)
 if(BUILD_TESTING)
     add_subdirectory(testing)
 endif()
+
+add_subdirectory(core)
