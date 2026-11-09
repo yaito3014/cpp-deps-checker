@@ -81,3 +81,47 @@ TEST_CASE("a directory without a reply above it warns once")
   CHECK_FALSE(again.context);
   CHECK_FALSE(again.warning);
 }
+
+namespace {
+
+// A configured copy of fixture, whose config file a test can change.
+testing::build configured_copy(std::string_view fixture, temporary_directory const& dir)
+{
+  fs::copy(testing::fixture(fixture), dir.path() / "source", fs::copy_options::recursive);
+  return testing::configure(dir.path() / "source", dir.path() / "build");
+}
+
+}  // namespace
+
+TEST_CASE("a changed config file reloads the context")
+{
+  temporary_directory const dir;
+  auto const build = configured_copy("entry_point_detail", dir);
+  tidy::context_cache cache;
+  auto const before = cache.find(build.dir);
+  std::ofstream{dir.path() / "source" / ".cpp-deps-checker.yaml"} << "tests:\n  names: [b]\n";
+
+  auto const after = cache.find(build.dir);
+
+  REQUIRE(before.context);
+  REQUIRE(after.context);
+  CHECK(before.context->tests.empty());
+  CHECK(after.context->tests.size() == 1);
+}
+
+TEST_CASE("a config file that does not read warns once")
+{
+  temporary_directory const dir;
+  auto const build = configured_copy("minimal", dir);
+  std::ofstream{dir.path() / "source" / ".cpp-deps-checker.yaml"} << "composition_root: [app]\n";
+  tidy::context_cache cache;
+
+  auto const first = cache.find(build.dir);
+  auto const again = cache.find(build.dir);
+
+  CHECK_FALSE(first.context);
+  REQUIRE(first.warning);
+  CHECK_THAT(*first.warning, ContainsSubstring(".cpp-deps-checker.yaml"));
+  CHECK_FALSE(again.context);
+  CHECK_FALSE(again.warning);
+}

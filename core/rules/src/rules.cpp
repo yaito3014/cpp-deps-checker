@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <deque>
 #include <format>
+#include <iterator>
 #include <map>
 #include <ranges>
 #include <unordered_map>
@@ -442,12 +443,14 @@ void placement(context const& ctx, std::vector<violation>& out)
       }
     }
   }
-  // Until the consumer config names the composition roots, every production
-  // target that no other production target links is one.
   std::vector<std::string> roots;
-  for (auto const* target : production) {
-    if (!consumed.contains(target->id)) {
-      roots.push_back(target->id);
+  if (ctx.composition_roots) {
+    roots = *ctx.composition_roots;
+  } else {
+    for (auto const* target : production) {
+      if (!consumed.contains(target->id)) {
+        roots.push_back(target->id);
+      }
     }
   }
   for (auto const& [n, dominator] : immediate_dominators(roots, successors)) {
@@ -507,10 +510,37 @@ std::vector<model::target const*> context::production() const
 
 context make_context(model::project project)
 {
+  // An empty config names no composition root, so it cannot fail.
+  return *make_context(std::move(project), config::config{});
+}
+
+std::expected<context, std::string> make_context(model::project project, config::config const& settings)
+{
+  auto const& tests_config = settings.tests.value_or(config::tests_config{});
+  std::vector<std::string_view> directories{std::begin(ownership::default_test_directories), std::end(ownership::default_test_directories)};
+  if (tests_config.directories) {
+    directories.assign(tests_config.directories->begin(), tests_config.directories->end());
+  }
+  std::vector<std::string_view> names;
+  if (tests_config.names) {
+    names.assign(tests_config.names->begin(), tests_config.names->end());
+  }
   auto owners = ownership::classify(project);
-  auto tests = ownership::find_tests(project);
+  auto tests = ownership::find_tests(project, directories, names);
   auto external = ownership::find_external(project);
-  return {std::move(project), {}, {}, std::move(owners), std::move(tests), std::move(external)};
+  context ctx{std::move(project), {}, {}, std::move(owners), std::move(tests), std::move(external), std::nullopt};
+  if (settings.composition_roots) {
+    auto const production = ctx.production();
+    auto& roots = ctx.composition_roots.emplace();
+    for (auto const& name : *settings.composition_roots) {
+      auto const found = std::ranges::find(production, name, &model::target::name);
+      if (found == production.end()) {
+        return std::unexpected{std::format("composition_roots: no production target named {}", name)};
+      }
+      roots.push_back((*found)->id);
+    }
+  }
+  return ctx;
 }
 
 std::vector<violation> check(context const& ctx)

@@ -21,8 +21,8 @@ struct lookup {
 };
 
 // The rule contexts of the CMake build directories above translation units'
-// working directories, each loaded once per configure. Thread-safe, since
-// clangd checks translation units in parallel.
+// working directories, each loaded once per configure and config file change.
+// Thread-safe, since clangd checks translation units in parallel.
 class context_cache {
 public:
   [[nodiscard]] lookup find(std::filesystem::path const& working_dir);
@@ -30,6 +30,8 @@ public:
 private:
   struct entry {
     std::string index;
+    std::optional<std::filesystem::path> source_dir;  // once the reply is read
+    std::optional<std::filesystem::file_time_type> config_time;
     std::shared_ptr<rules::context const> context;
   };
 
