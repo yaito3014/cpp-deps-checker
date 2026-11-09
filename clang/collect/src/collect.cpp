@@ -102,7 +102,7 @@ std::expected<collection, std::string> collect(std::filesystem::path const& comp
 
   std::set<rules::include> found;
   std::vector<rules::failure> failures;
-  recording_factory factory{[&](rules::include directive) {
+  recording_factory factory{[&](rules::include directive, ::clang::CharSourceRange) {
     if (keep(directive.includer)) {
       found.insert(std::move(directive));
     }
