@@ -62,7 +62,7 @@ private:
 
 [[nodiscard]] owners classify(model::project const& project);
 
-inline constexpr std::string_view default_test_directories[]{"tests/**", "test/**"};
+inline constexpr std::string_view default_test_directories[]{"**/tests/**", "**/test/**"};
 
 // Ids of the test targets: those defined by a CMakeLists.txt whose path,
 // relative to the top-level source directory, matches one of directories (as

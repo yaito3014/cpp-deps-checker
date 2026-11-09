@@ -17,8 +17,8 @@ target_link_libraries(
     cpp_deps_checker_cli
     PRIVATE
         cpp_deps_checker::collect
+        cpp_deps_checker::config
         cpp_deps_checker::model
-        cpp_deps_checker::ownership
         cpp_deps_checker::report
         cpp_deps_checker::rules
         CLI11::CLI11

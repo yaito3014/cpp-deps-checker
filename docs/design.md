@@ -34,7 +34,7 @@ Definitions used by the rules:
 - **Parent.** A target's parent directory is the nearest proper ancestor of its source directory that defines a production target other than a UTILITY target. Targets in one directory share one subtree, so the parent is a directory rather than a target, which works the same when a directory defines several targets. A parent at the top-level source directory constrains nothing.
 - **External target.** A target whose code is not the project's: an imported target, or one defined outside the top-level source directory or inside a build directory nested in it, which is where FetchContent puts fetched sources. A dependency added with `add_subdirectory` from inside the source tree, and anything fetched by an in-source build (build directory equal to the source directory), are not recognized. `FetchContent_MakeAvailable()` turns header set verification off while it runs (cmake-variables(7), `CMAKE_VERIFY_INTERFACE_HEADER_SETS`), so fetched targets have no verification targets; an out-of-tree `add_subdirectory` can still bring some in, hence the rule 3a exemption.
 - **Production target.** A target that is not external, not a test target, and not a header set verification target.
-- **Production graph.** The declared edges between production targets. Until the consumer config names the composition roots, every production target that no other production target links is one.
+- **Production graph.** The declared edges between production targets. Unless the consumer config names the composition roots, every production target that no other production target links is one.
 - **Exceptions.** A rule may be broken only through an entry in the consumer config, and every entry must carry a `reason`.
 
 ## Inputs
@@ -93,7 +93,7 @@ Re-checked on CMake 4.4.5 with the same fixture (`tests/fixtures/model_basics`):
 
 Test targets are exempt from the privacy and placement rules (5 and 6) and may include `detail/` headers, but every other rule still applies to them. Tests usually live in a separate directory, and many build tools expect that, so treating them as ordinary consumers would make rule 5 fail on almost every project.
 
-**Identification.** The consumer config lists directory globs and name patterns, defaulting to `tests/**` and `test/**` with no name patterns. A target is a test target, including a test helper library, if the path of the `CMakeLists.txt` that defines it, relative to the top-level source directory, matches a directory glob (`pathlib.PurePath.full_match`, where `**` spans any number of segments), or if its name matches a name pattern (`fnmatch`, case-sensitive). The defaults match only top-level `tests/` and `test/` directories; per-library test directories need `**/tests/**`. External targets are never test targets, and a header set verification target is one exactly when the target it verifies is. Until the config file is decided, the CLI uses the defaults. CTest registration is not used because it knows only test executables.
+**Identification.** The consumer config lists directory globs and name patterns, defaulting to `**/tests/**` and `**/test/**` with no name patterns. A target is a test target, including a test helper library, if the path of the `CMakeLists.txt` that defines it, relative to the top-level source directory, matches a directory glob (`pathlib.PurePath.full_match`, where `**` spans any number of segments), or if its name matches a name pattern (`fnmatch`, case-sensitive). The defaults match `tests/` and `test/` directories at any depth, so per-library test directories count too (`**` also matches no segment, so `tests/CMakeLists.txt` matches `**/tests/**`). External targets are never test targets, and a header set verification target is one exactly when the target it verifies is. CTest registration is not used because it knows only test executables.
 
 | Rule | Applies to test targets? |
 | --- | --- |
@@ -129,21 +129,18 @@ The Action (`action.yml`, composite) runs these steps, the shell parts in `actio
 5. Run `cpp-deps-checker check --annotations --summary "$GITHUB_STEP_SUMMARY"`, with `--baseline` when step 4 succeeded. It also collects the includes of every translation unit in `compile_commands.json`.
 6. Upload the graph as an artifact, then fail the job if the check failed.
 
-The consumer repository holds one config file. Proposed name `.cpp-deps-checker.toml` (not yet decided), with these keys:
+The consumer repository holds one config file, `.cpp-deps-checker.yaml` in the top-level source directory, which the File API reply names, so the command line and the plugin find it without an option. YAML was chosen over TOML and JSON (decided 2026-11-10), and glaze, already a dependency, reads it; glaze rejects a document without content, so a file of only comments and blank lines is read as empty. Every key is optional, and an omitted key keeps its default:
 
-```toml
-composition_roots = ["app"]
-
-[tests]
-dirs = ["tests/**", "test/**"]
-names = []
-
-[[exception]]
-rule = "direct-layering"
-from = "parser"
-header = "lexer/detail/token.hpp"
-reason = "required; why the rule is broken here"
+```yaml
+# Targets whose dominator tree rule 6 places targets in; default: every
+# production target that no production target links.
+composition_roots: [app]
+tests:
+  directories: ["**/tests/**", "**/test/**"]  # the default
+  names: []                                   # the default
 ```
+
+An unknown key, a value of the wrong type, or a composition root that names no production target makes the input unusable: `check` and `graph` exit 2, and the plugin warns once per configure or config change. Exceptions, each with a reason, are planned.
 
 ## Structure
 
@@ -151,9 +148,10 @@ Each feature is a CMake target, and the `target_link_libraries` graph is the dep
 
 ```
 core/
+  config/     # .cpp-deps-checker.yaml -> config
   model/      # File API reply + trace -> Model
-  ownership/  # Model -> file owners and kinds, test and external targets
   rules/      # Context -> violations; also the per-include check for the plugin
+    ownership/  # Model -> file owners and kinds, test and external targets
 cli/
   collect/    # libTooling run over compile_commands.json
   report/     # text, GitHub annotations, job summary, Mermaid graph
@@ -168,8 +166,9 @@ testing/      # test support: configures fixtures through action/configure.sh
 
 The one design decision each target hides:
 
+- `config`: the config file's name, location and format.
 - `model`: how CMake exposes targets, edges and definition order (File API fields, trace format).
-- `ownership`: which target owns a file, whether it is public, private or `detail/`, and which targets are tests or external.
+- `rules/ownership`: which target owns a file, whether it is public, private or `detail/`, and which targets are tests or external.
 - `rules`: the policy of each rule. `rules` owns the include record and the `rules::context` it checks, so the collectors depend on `rules`, not the other way round.
 - `report`: output formats and CI annotation syntax.
 - `clang/includes`: how includes are read from Clang (which callbacks, physical line from the hash location).
@@ -177,9 +176,9 @@ The one design decision each target hides:
 - `clang/tidy`: how the checks run inside clang-tidy and clangd (registration, the build directory of a translation unit, where diagnostics go).
 - `clang/tidy/cache`: when a build directory's rule context is loaded again.
 
-Allowed edges, in topological order: `model`; `ownership` -> `model`; `rules` -> `ownership`, `model`; `report` -> `rules`, `model`; `clang/includes` -> `rules`; `cli/collect` -> `clang/includes`; `clang/tidy/cache` -> `rules`, `model`; `clang/tidy` -> `clang/tidy/cache`, `clang/includes`, `rules`; the command line -> everything but `clang/tidy`. `testing` -> `model` (it builds projects by hand), and only tests link it.
+Allowed edges, in topological order: `config`; `model`; `rules/ownership` -> `model`; `rules` -> `config`, `rules/ownership`, `model`; `report` -> `rules`, `model`; `clang/includes` -> `rules`; `cli/collect` -> `clang/includes`; `clang/tidy/cache` -> `rules`, `config`, `model`; `clang/tidy` -> `clang/tidy/cache`, `clang/includes`, `rules`; the command line -> everything but `clang/tidy` and `rules/ownership`, which it reaches through the rule context. `testing` -> `model` (it builds projects by hand), and only tests link it.
 
-Rules need more than the model: rules 3 and 4 need include edges, and rules 4 to 7 need the test targets. `rules` therefore owns `rules::context` (the project, the includes, the failed header set verification TUs, the owners, and the test and external targets) and `rules::violation`. `rules::check(ctx)` runs every rule, and `rules::check_include` runs rules 3 and 4 on one include for the plugin. The command line builds the context from `model`, `collect`, and `ownership`. Exceptions from the consumer config will be applied once, after all rules run, not inside each rule.
+Rules need more than the model: rules 3 and 4 need include edges, and rules 4 to 7 need the test targets. `rules` therefore owns `rules::context` (the project, the includes, the failed header set verification TUs, the owners, and the test and external targets) and `rules::violation`. `rules::check(ctx)` runs every rule, and `rules::check_include` runs rules 3 and 4 on one include for the plugin. `rules::make_context` applies the config to a project, with the defaults for what it leaves unset; the command line builds the context from `model`, `config`, `rules`, and `collect`. Exceptions from the consumer config will be applied once, after all rules run, not inside each rule.
 
 The declared-edges definition is computed by the model (`target::declared_dependencies`), because which File API fields hold edges is the model's hidden decision.
 
@@ -195,7 +194,7 @@ Tests come first, with Catch2, per target. Each rule has fixture CMake projects 
 
 ## Plugin
 
-The clang-tidy module registers checks for rules 3 and 4 only, `cpp-deps-direct-layering` and `cpp-deps-entry-point`; the graph rules (1, 2, 5, 6, 7) and rule 3a need the whole project and stay in the command line. For each translation unit the check takes the compile command's directory, walks up to the CMake build directory holding `.cmake/api/v1/reply`, and loads the codemodel there, cached per build directory for the life of the process and loaded again when the current index file's name changes. The compile command's directory is the virtual file system's working directory: clang-tidy sets it and copies it into `ClangTidyContext::getCurrentBuildDirectory()`, but clangd sets only the working directory (clangd `ParsedAST.cpp`, LLVM 24 snapshot). A directory without a usable reply gets one configuration diagnostic per configure; clangd drops it, as it drops every warning without a location (clangd `Diagnostics.cpp`). A violation is reported on the directive's file name, or at the start of the main file for a header given with `-include`. Editors that drive CMake through the File API already leave that reply in the build directory (unverified for CMake Tools in VS Code). The trace is not needed: rules 3 and 4 use only the codemodel, and header set verification targets are recognized by their backtrace node without a line, as recorded in Inputs, instead of by a missing trace definition.
+The clang-tidy module registers checks for rules 3 and 4 only, `cpp-deps-direct-layering` and `cpp-deps-entry-point`; the graph rules (1, 2, 5, 6, 7) and rule 3a need the whole project and stay in the command line. For each translation unit the check takes the compile command's directory, walks up to the CMake build directory holding `.cmake/api/v1/reply`, and loads the codemodel there, cached per build directory for the life of the process and loaded again when the current index file's name or the config file's modification time changes. The compile command's directory is the virtual file system's working directory: clang-tidy sets it and copies it into `ClangTidyContext::getCurrentBuildDirectory()`, but clangd sets only the working directory (clangd `ParsedAST.cpp`, LLVM 24 snapshot). A directory without a usable reply or config gets one configuration diagnostic per configure or config change; clangd drops it, as it drops every warning without a location (clangd `Diagnostics.cpp`). A violation is reported on the directive's file name, or at the start of the main file for a header given with `-include`. Editors that drive CMake through the File API already leave that reply in the build directory (unverified for CMake Tools in VS Code). The trace is not needed: rules 3 and 4 use only the codemodel, and header set verification targets are recognized by their backtrace node without a line, as recorded in Inputs, instead of by a missing trace definition.
 
 The plugin links `libclang-cpp` and `libLLVM`, which clang-tidy and clangd from apt.llvm.org load as shared libraries too, and takes the clang-tidy framework, which both link statically and export, from the host. It must be built with the same LLVM version as the tool that loads it, and nothing checks this at load time. clangd builds the open file's preamble without clang-tidy and replays only the open file's own include directives from it to the checks, so the directives of the headers included in the preamble are not checked in an editor. clangd's default `FastCheckFilter: Strict` drops every check missing from its list of timed checks, which includes every plugin check, so `.clangd` needs `FastCheckFilter: Loose`. clangd loads plugins from LLVM 24 ([llvm-project#226995](https://github.com/llvm/llvm-project/pull/226995)); the first target is LLVM 24 only, tested with the apt.llvm.org snapshot until 24 is released.
 
@@ -213,7 +212,7 @@ These claims are approximate until checked:
 Open decisions:
 
 - [x] Graph output: a CI artifact, Mermaid in Markdown (decided 2026-11-08, over a committed docs file). The new-edge baseline therefore comes from configuring the base branch a second time on every pull request, and a base branch that does not configure leaves the new edges unlisted.
-- [ ] Config file name and format (`.cpp-deps-checker.toml` proposed).
+- [x] Config file name and format: `.cpp-deps-checker.yaml` (decided 2026-11-10).
 - [ ] Several targets per directory. Rule 5 is unaffected (the parent is a directory). Rule 6 accepts a target in the same directory as its dominator, so a target that should be nested in a subdirectory but shares its dominator's directory is not reported; tightening this to "strictly below" would warn on every multi-target directory.
 - [ ] Multi-config generators: which configuration the check reads.
 - [ ] Owner of an external target's headers (rule 3). For a fetched target the reply lists the files, but owning them would also apply rule 4: Catch2 lists its headers as sources of a static library, so they would count as private and every test including them would fail. The reply has no include directories for imported targets. Candidates: (a) inject a script through `CMAKE_PROJECT_INCLUDE` that walks the directories' `IMPORTED_TARGETS` and writes each target's `INTERFACE_INCLUDE_DIRECTORIES` with `file(GENERATE)`, a fourth input, unverified; (b) match consumer `compileGroups` include paths to `linkLibraries` entries by backtrace, ambiguous when one call links several imported targets; (c) drop imported targets from rule 3.
