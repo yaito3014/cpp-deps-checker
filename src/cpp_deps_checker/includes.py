@@ -146,10 +146,19 @@ def _lines(edges: Iterable[_Edge]) -> list[Include]:
     return includes
 
 
-def collect(compile_commands: Path, keep: Callable[[Path], bool]) -> Collection:
-    """Include edges of every translation unit, for includers that keep accepts,
-    and the translation units that failed to preprocess."""
-    entries = json.loads(compile_commands.read_text())
+def collect(
+    compile_commands: Path,
+    keep: Callable[[Path], bool],
+    skip: Callable[[Path], bool] = lambda _: False,
+) -> Collection:
+    """Include edges, for includers that keep accepts, and the translation
+    units that failed to preprocess; a translation unit whose source skip
+    accepts is not preprocessed."""
+    entries = [
+        entry
+        for entry in json.loads(compile_commands.read_text())
+        if not skip((Path(entry["directory"]) / entry["file"]).resolve())
+    ]
     with ThreadPoolExecutor() as pool:
         results = list(pool.map(_preprocess, entries))
     edges: set[_Edge] = set().union(*(edges for edges, _ in results))

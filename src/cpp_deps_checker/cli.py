@@ -81,8 +81,18 @@ def context(build_dir: Path, trace: Path, compile_commands: Path | None) -> Cont
             tests=tests,
             external=external,
         )
+    # No rule looks at the edges of an external target's translation units,
+    # and they may not preprocess before a build.
+    external_sources = {
+        path
+        for t in model.targets.values()
+        if t.id in external
+        for path in (*t.sources, *(p for f in t.file_sets for p in f.files))
+    }
     collection = collect(
-        compile_commands, keep=lambda path: owners.of(path) is not None
+        compile_commands,
+        keep=lambda path: owners.of(path) is not None,
+        skip=lambda source: source in external_sources,
     )
     for failure in collection.failures:
         if model.verified_target(failure.source) is None:

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 4.2)
 project(dep LANGUAGES CXX)
-add_library(dep STATIC dep.cpp include/dep/dep.hpp)
+add_library(dep STATIC dep.cpp generated.cpp include/dep/dep.hpp)
 target_include_directories(dep PUBLIC include)
 add_library(dep_main STATIC main.cpp)
 target_link_libraries(dep_main PUBLIC dep)
