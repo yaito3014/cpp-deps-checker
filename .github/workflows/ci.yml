@@ -26,3 +26,31 @@ jobs:
           clang++ --version
           ninja --version
       - run: uv run pytest
+
+  # The Action on a clean fixture and on one with a cycle, each in its own job
+  # because both runs would share the Action's work directory.
+  action:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - fixture: minimal
+            expected: success
+          - fixture: cycles_static_pair
+            expected: failure
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+      - id: check
+        uses: ./
+        continue-on-error: true
+        with:
+          source-dir: tests/fixtures/${{ matrix.fixture }}
+          artifact-name: graph-${{ matrix.fixture }}
+      - name: Expect ${{ matrix.expected }}
+        if: steps.check.outcome != matrix.expected
+        env:
+          OUTCOME: ${{ steps.check.outcome }}
+        run: |
+          echo "::error::the Action ended in $OUTCOME"
+          exit 1
