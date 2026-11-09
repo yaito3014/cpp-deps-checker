@@ -220,7 +220,7 @@ The one design decision each target hides:
 - `clang/collect`: how translation units are run in-process (libTooling over the compilation database).
 - `clang/tidy`: how the check reaches the model from inside clang-tidy and clangd.
 
-Allowed edges, in topological order: `model`; `ownership` -> `model`; `rules` -> `ownership`, `model`; `report` -> `rules`, `model`; `clang/includes` -> `rules`; `clang/collect` -> `clang/includes`; `clang/tidy` -> `clang/includes`, `rules`, `ownership`, `model`; the command line -> everything but `clang/tidy`. `testing` depends on nothing and only tests link it.
+Allowed edges, in topological order: `model`; `ownership` -> `model`; `rules` -> `ownership`, `model`; `report` -> `rules`, `model`; `clang/includes` -> `rules`; `clang/collect` -> `clang/includes`; `clang/tidy` -> `clang/includes`, `rules`, `ownership`, `model`; the command line -> everything but `clang/tidy`. `testing` -> `model` (it builds projects by hand), and only tests link it.
 
 ### Plugin
 
