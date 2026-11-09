@@ -66,6 +66,36 @@ def test_shared_directory_is_ambiguous() -> None:
     assert classify(model(a, b)).of(ROOT / "ab/x.hpp") is None
 
 
+def test_file_listed_by_two_targets_is_ambiguous() -> None:
+    a = target("a", type="STATIC_LIBRARY", sources=[ROOT / "shared.hpp"])
+    b = target("b", type="STATIC_LIBRARY", sources=[ROOT / "shared.hpp"])
+    assert classify(model(a, b)).of(ROOT / "shared.hpp") is None
+
+
+def test_file_in_a_public_and_a_private_file_set_is_public() -> None:
+    a = target(
+        "a",
+        type="STATIC_LIBRARY",
+        file_sets=[
+            headers("PRIVATE", ROOT / "a/a.hpp"),
+            headers("PUBLIC", ROOT / "a/a.hpp"),
+        ],
+    )
+    assert classify(model(a)).of(ROOT / "a/a.hpp") == Owner("a", public=True)
+
+
+def test_base_directory_of_a_public_and_a_private_file_set_is_public() -> None:
+    c = target(
+        "c",
+        type="STATIC_LIBRARY",
+        file_sets=[
+            headers("PRIVATE", base_directories=[ROOT / "c/include"]),
+            headers("PUBLIC", base_directories=[ROOT / "c/include"]),
+        ],
+    )
+    assert classify(model(c)).of(ROOT / "c/include/c.hpp") == Owner("c", public=True)
+
+
 def test_imported_and_utility_targets_own_nothing() -> None:
     ext = target("ext", imported=True, sources=[ROOT / "ext/e.hpp"])
     util = target("util", type="UTILITY", sources=[ROOT / "util/u.txt"])
@@ -173,6 +203,41 @@ def test_detail_counts_from_the_deepest_base_directory() -> None:
     owners = classify(model(a))
 
     assert owners.of(ROOT / "a/detail/include/a/a.hpp") == Owner("a", public=True)
+
+
+def test_detail_only_if_every_public_file_set_says_so() -> None:
+    a = target(
+        "a",
+        type="STATIC_LIBRARY",
+        file_sets=[
+            headers(
+                "PUBLIC",
+                ROOT / "a/include/detail/x.hpp",
+                base_directories=[ROOT / "a/include"],
+            ),
+            headers(
+                "PUBLIC",
+                ROOT / "a/include/detail/x.hpp",
+                base_directories=[ROOT / "a/include/detail"],
+            ),
+            headers(
+                "PRIVATE",
+                ROOT / "a/include/detail/y.hpp",
+                base_directories=[ROOT / "a/include"],
+            ),
+            headers(
+                "PUBLIC",
+                ROOT / "a/include/detail/y.hpp",
+                base_directories=[ROOT / "a/include"],
+            ),
+        ],
+    )
+    owners = classify(model(a))
+
+    assert owners.of(ROOT / "a/include/detail/x.hpp") == Owner("a", public=True)
+    assert owners.of(ROOT / "a/include/detail/y.hpp") == Owner(
+        "a", public=True, detail=True
+    )
 
 
 def test_tests_by_defining_directory() -> None:

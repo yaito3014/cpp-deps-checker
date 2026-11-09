@@ -1,7 +1,8 @@
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path
+from typing import Protocol
 
 from cpp_deps_checker.model import Model, Target
 
@@ -31,7 +32,7 @@ class _Claim:
         return Owner(self.target, self.public, detail)
 
 
-# None: claimed by several owners, or by an external target.
+# None: claimed by several targets, or by an external target.
 type _Index = Mapping[Path, _Claim | None]
 
 
@@ -67,14 +68,42 @@ def _public(target: Target, visibility: str | None) -> bool:
     return target.type == "INTERFACE_LIBRARY" or visibility in {"PUBLIC", "INTERFACE"}
 
 
-def _index[T](claims: Iterable[tuple[Path, T]]) -> dict[Path, T | None]:
-    owners: dict[Path, set[T]] = {}
-    for path, owner in claims:
-        owners.setdefault(path, set()).add(owner)
-    return {
-        path: next(iter(found)) if len(found) == 1 else None
-        for path, found in owners.items()
-    }
+class _Claimant(Protocol):
+    @property
+    def target(self) -> str: ...
+
+
+def _index[T: _Claimant](
+    claims: Iterable[tuple[Path, T | None]], merge: Callable[[Sequence[T]], T]
+) -> dict[Path, T | None]:
+    """Each path's claims merged into one, or None if they come from several
+    targets or one is None. A target claims a file several times when the
+    file is in several of its file sets, which CMake allows."""
+    found: dict[Path, list[T | None]] = {}
+    for path, claim in claims:
+        found.setdefault(path, []).append(claim)
+
+    def resolve(claims: list[T | None]) -> T | None:
+        known = [c for c in claims if c is not None]
+        if len(known) < len(claims) or len({c.target for c in known}) > 1:
+            return None
+        return merge(known)
+
+    return {path: resolve(claims) for path, claims in found.items()}
+
+
+def _merge_claims(claims: Sequence[_Claim]) -> _Claim:
+    return _Claim(claims[0].target, any(c.public for c in claims))
+
+
+def _merge_owners(owners: Sequence[Owner]) -> Owner:
+    """Public if any file set exposes the file; a detail header only if every
+    file set that exposes it puts it below a detail/ directory, since one
+    that does not makes it reachable as an entry point."""
+    public = [o for o in owners if o.public]
+    return Owner(
+        owners[0].target, bool(public), bool(public) and all(o.detail for o in public)
+    )
 
 
 def _relative(path: Path, directories: Iterable[Path]) -> Path | None:
@@ -159,9 +188,9 @@ def classify(model: Model) -> Owners:
     ]
     source_directories += [(t.source_dir, None) for t in shadowing]
     return Owners(
-        listed=_index(listed),
-        base_directories=_index(base_directories),
-        source_directories=_index(source_directories),
+        listed=_index(listed, _merge_owners),
+        base_directories=_index(base_directories, _merge_claims),
+        source_directories=_index(source_directories, _merge_claims),
     )
 
 
