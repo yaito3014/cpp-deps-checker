@@ -263,3 +263,32 @@ TEST_CASE("an include option header also included by a directive is one include,
 
   CHECK(collection.includes == std::vector<include>{{root / "m.cpp", root / "inc/a.hpp", 1}});
 }
+
+// CMake's module scanning, on by default with Ninja and C++20, adds a module
+// map response file to each compile command, which only a build writes.
+TEST_CASE("a module map that no build has written yet is ignored")
+{
+  temporary_directory const dir;
+  write(dir.path() / "inc/a.hpp", guarded("a.hpp"));
+  write(dir.path() / "m.cpp", "#include \"a.hpp\"\n");
+  auto const root = fs::canonical(dir.path());
+
+  auto const collection = collected(commands(dir.path(), {"m.cpp"}, {"@m.cpp.o.modmap"}));
+
+  CHECK(collection.failures.empty());
+  CHECK(collection.includes == std::vector<include>{{root / "m.cpp", root / "inc/a.hpp", 1}});
+}
+
+TEST_CASE("a module map that a build has written is used")
+{
+  temporary_directory const dir;
+  write(dir.path() / "inc/a.hpp", guarded("a.hpp"));
+  write(dir.path() / "m.cpp", "#ifdef MAPPED\n#include \"a.hpp\"\n#endif\n");
+  write(dir.path() / "m.cpp.o.modmap", "-DMAPPED\n");
+  auto const root = fs::canonical(dir.path());
+
+  auto const collection = collected(commands(dir.path(), {"m.cpp"}, {"@m.cpp.o.modmap"}));
+
+  CHECK(collection.failures.empty());
+  CHECK(collection.includes == std::vector<include>{{root / "m.cpp", root / "inc/a.hpp", 2}});
+}
