@@ -35,17 +35,20 @@ runs:
         SOURCE_DIR: ${{ inputs.source-dir }}
         CMAKE_ARGS: ${{ inputs.cmake-args }}
         BASE_REF: ${{ inputs.base-ref }}
-        WORK_DIR: ${{ runner.temp }}/cpp-deps-checker
-      # The status is kept so that the graph is uploaded before the job fails.
+      # A work directory per invocation, so that one job can check several
+      # source directories. The status is kept so that the graph is uploaded
+      # before the job fails.
       run: |
-        SUMMARY_FILE=$GITHUB_STEP_SUMMARY "$GITHUB_ACTION_PATH/action/run.sh" ||
-          echo "status=$?" >>"$GITHUB_OUTPUT"
+        work_dir=$(mktemp -d "$RUNNER_TEMP/cpp-deps-checker.XXXXXX")
+        echo "work-dir=$work_dir" >>"$GITHUB_OUTPUT"
+        WORK_DIR=$work_dir SUMMARY_FILE=$GITHUB_STEP_SUMMARY \
+          "$GITHUB_ACTION_PATH/action/run.sh" || echo "status=$?" >>"$GITHUB_OUTPUT"
     - name: Upload graph
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v7.0.2
       with:
         name: ${{ inputs.artifact-name }}
-        path: ${{ runner.temp }}/cpp-deps-checker/graph.md
+        path: ${{ steps.check.outputs.work-dir }}/graph.md
         if-no-files-found: ignore
     - name: Fail on errors
       if: steps.check.outputs.status != ''
