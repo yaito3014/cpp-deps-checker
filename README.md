@@ -32,7 +32,7 @@ jobs:
   deps:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: yaito3014/cpp-deps-checker@main
         with:
           source-dir: .  # CMake source directory, relative to the repository root
