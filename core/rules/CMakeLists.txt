@@ -1,3 +1,5 @@
+add_subdirectory(ownership)
+
 add_library(cpp_deps_checker_rules)
 add_library(cpp_deps_checker::rules ALIAS cpp_deps_checker_rules)
 target_compile_features(cpp_deps_checker_rules PUBLIC cxx_std_23)
