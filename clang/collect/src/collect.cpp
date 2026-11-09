@@ -7,12 +7,16 @@
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Frontend/FrontendActions.h>
 #include <clang/Frontend/TextDiagnosticPrinter.h>
+#include <clang/Tooling/ArgumentsAdjusters.h>
+#include <clang/Tooling/CompilationDatabase.h>
 #include <clang/Tooling/JSONCompilationDatabase.h>
 #include <clang/Tooling/Tooling.h>
 
 #include <llvm/ADT/SmallString.h>
+#include <llvm/Support/VirtualFileSystem.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include <algorithm>
 #include <format>
 #include <optional>
 #include <set>
@@ -89,16 +93,26 @@ private:
   includes::sink on_include_;
 };
 
+// CMake's module scanning, on by default with Ninja and C++20 or later, adds a
+// module map response file to each compile command, which only a build writes.
+// Once response files are expanded, an argument still naming one is missing,
+// and a translation unit that imports no module does not need it.
+[[nodiscard]] ::clang::tooling::CommandLineArguments without_missing_module_maps(::clang::tooling::CommandLineArguments arguments, ::llvm::StringRef)
+{
+  std::erase_if(arguments, [](std::string const& argument) { return argument.starts_with('@') && argument.ends_with(".modmap"); });
+  return arguments;
+}
+
 }  // namespace
 
 std::expected<collection, std::string> collect(std::filesystem::path const& compile_commands, predicate const& keep, predicate const& skip)
 {
   std::string error;
-  auto const database =
-      ::clang::tooling::JSONCompilationDatabase::loadFromFile(compile_commands.string(), error, ::clang::tooling::JSONCommandLineSyntax::AutoDetect);
-  if (!database) {
+  auto json = ::clang::tooling::JSONCompilationDatabase::loadFromFile(compile_commands.string(), error, ::clang::tooling::JSONCommandLineSyntax::AutoDetect);
+  if (!json) {
     return std::unexpected{std::format("cannot read {}: {}", compile_commands.string(), error)};
   }
+  auto const database = ::clang::tooling::expandResponseFiles(std::move(json), ::llvm::vfs::getRealFileSystem());
 
   std::set<rules::include> found;
   std::vector<rules::failure> failures;
@@ -116,6 +130,7 @@ std::expected<collection, std::string> collect(std::filesystem::path const& comp
     }
     ::clang::tooling::ClangTool tool{*database, {file.string()}};
     tool.setPrintErrorMessage(false);
+    tool.appendArgumentsAdjuster(without_missing_module_maps);
     diagnostics consumer;
     tool.setDiagnosticConsumer(&consumer);
     if (tool.run(&factory) != 0 || consumer.getNumErrors() > 0) {

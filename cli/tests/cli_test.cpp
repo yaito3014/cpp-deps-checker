@@ -320,3 +320,19 @@ TEST_CASE("a dependency fetched into a build directory inside the source tree is
   CHECK(r.status == 0);
   CHECK(r.out.empty());
 }
+
+// With Ninja and C++20, CMake adds a module map that only a build writes to
+// each compile command.
+TEST_CASE("a C++20 project is checked before its first build")
+{
+  temporary_directory const dir;
+  std::vector<std::string> const cxx20{"-DCMAKE_CXX_STANDARD=20"};
+  auto const build = testing::configure(testing::fixture("direct_layering_transitive"), dir.path() / "build", cxx20);
+  REQUIRE_THAT(read(build.compile_commands), ContainsSubstring(".modmap"));
+
+  auto const r = run({"check", build.dir.string()});
+
+  CAPTURE(r.err);
+  CHECK(r.status == 1);
+  CHECK(lines(r.out) == std::vector<std::string>{"a/a.cpp:2: error: a includes a/b/c/include/c/c.hpp of c without linking c directly [direct-layering]"});
+}

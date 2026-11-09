@@ -60,6 +60,8 @@ The plugin adds rules 3 and 4 to clang-tidy and clangd 24 as the checks `cpp-dep
 clang-tidy --load=build/default/clang/tidy/libcpp-deps-checker-tidy.so --checks='-*,cpp-deps-*' -p build src/a.cpp
 ```
 
+With Ninja and C++20 or later, CMake scans for modules by default and names a module map in each compile command that only a build writes; clang-tidy fails on a translation unit whose module map is missing, so build first or configure with `-DCMAKE_CXX_SCAN_FOR_MODULES=OFF`. `check` and clangd ignore a missing module map.
+
 Start clangd with `--load=/path/to/libcpp-deps-checker-tidy.so` and enable the checks in `.clangd`. clangd runs a check it does not know to be fast only with `FastCheckFilter: Loose`:
 
 ```yaml
