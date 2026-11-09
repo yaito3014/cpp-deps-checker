@@ -27,6 +27,13 @@ model::target target(std::string const& name, target_options options)
   };
 }
 
+model::target placed(std::string const& name, std::string_view directory, std::vector<std::string> links, target_options options)
+{
+  options.source_dir = directory == "." ? root : root / directory;
+  options.links = std::move(links);
+  return target(name, std::move(options));
+}
+
 model::file_set headers(std::string visibility, std::vector<std::filesystem::path> files, std::vector<std::filesystem::path> base_directories)
 {
   return {

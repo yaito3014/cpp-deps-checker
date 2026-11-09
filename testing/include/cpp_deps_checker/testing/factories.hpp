@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace cpp_deps_checker::testing {
@@ -27,6 +28,10 @@ struct target_options {
 
 // A target whose id is its name; paths are absolute.
 [[nodiscard]] model::target target(std::string const& name, target_options options = {});
+
+// A target defined in root / directory ("." for root itself) with the given
+// interface links; options' source_dir and links are replaced.
+[[nodiscard]] model::target placed(std::string const& name, std::string_view directory, std::vector<std::string> links = {}, target_options options = {});
 
 // A HEADERS file set.
 [[nodiscard]] model::file_set headers(
