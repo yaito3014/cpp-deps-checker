@@ -38,7 +38,9 @@ struct graph {
 
 // The declared edges between targets, by name; tests and external are sets of
 // target ids. Header set verification targets are left out because CMake
-// creates them, and UTILITY targets because CMake does not let them be linked.
+// creates them, UTILITY targets because CMake does not let them be linked, and
+// external targets that no project target links, which a find_package brings
+// in by the hundred.
 // Targets that share a name (imported targets in different directories) share
 // a node.
 [[nodiscard]] graph make_graph(model::project const& project, std::set<std::string> const& tests, std::set<std::string> const& external);
