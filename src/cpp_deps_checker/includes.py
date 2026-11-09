@@ -4,7 +4,7 @@ import shlex
 import subprocess
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -87,37 +87,75 @@ class Directive:
     entered: Path | None
 
 
-def parse_directives(output: str, directory: Path) -> list[Directive]:
-    """The include directives in the output of `clang -E -dI`, in order.
+@dataclass
+class _Pending:
+    includer: Path | None  # None in the predefines or on the command line
+    line: int
+    forced: bool  # inside a header included with -include
+    entered: Path | None = None
+
+
+def parse_directives(
+    output: str, directory: Path
+) -> tuple[list[Directive], list[Include]]:
+    """The include directives in the output of `clang -E -dI`, in order, and
+    the include edges of the headers included with -include.
 
     Line markers give the file and line of the next output line, and each
-    other line is the next line of that file. Directives of the predefines
-    and the command line (-include) are left out, since -H does not print
-    the headers they include.
+    other line is the next line of that file; their flags tell when a file
+    is entered (1) and when it is returned to (2). -H prints neither a
+    -include header nor what it includes, so the directives under one are
+    not returned but give the edges to the headers they entered, the header
+    itself counting as included by the main file without a line. A header
+    such a directive skipped (include guard, #pragma once) is not named, so
+    it gives no edge.
     """
-    directives: list[Directive] = []
+    found: list[_Pending] = []
+    stack: list[str] = []  # files entered, the main file first
+    main: Path | None = None
     file: Path | None = None
     line = 0
-    # A directive whose header is entered right after it, with only line
-    # markers in between.
-    pending: int | None = None
+    # The directive whose header may be entered next, with only line markers
+    # in between.
+    pending: _Pending | None = None
     for text in output.splitlines():
         marker = _MARKER.match(text)
         if marker is not None:
             name = _ESCAPE.sub(r"\1", marker[2])
             path = None if name.startswith("<") else (directory / name).resolve()
-            if "1" in marker[3].split():
-                if pending is not None and path is not None:
-                    directives[pending] = replace(directives[pending], entered=path)
+            key = name if path is None else str(path)
+            flags = marker[3].split()
+            if not stack:
+                stack, main = [key], path
+            elif "1" in flags:
+                if pending is not None:
+                    pending.entered = path
                 pending = None
+                stack.append(key)
+            elif "2" in flags:
+                while len(stack) > 1 and stack[-1] != key:
+                    stack.pop()
             file, line = path, int(marker[1])
             continue
         pending = None
-        if file is not None and _DIRECTIVE.match(text):
-            directives.append(Directive(file, line, None))
-            pending = len(directives) - 1
+        if _DIRECTIVE.match(text):
+            forced = any(entry.startswith("<") for entry in stack[1:])
+            pending = _Pending(file, line, forced)
+            found.append(pending)
         line += 1
-    return directives
+    directives = [
+        Directive(d.includer, d.line, d.entered)
+        for d in found
+        if not d.forced and d.includer is not None
+    ]
+    forced_includes = [
+        Include(d.includer, d.entered, d.line)
+        if d.includer is not None
+        else Include(main, d.entered, None)
+        for d in found
+        if d.forced and d.entered is not None and main is not None
+    ]
+    return directives, forced_includes
 
 
 def directive_lines(
@@ -186,11 +224,12 @@ def _preprocess(entry: dict[str, Any]) -> tuple[list[Include], Failure | None]:
     )
     edges = parse_tree(result.stderr, source, directory)
     error = _first_error(result.stderr, directory)
-    lines = directive_lines(edges, parse_directives(result.stdout, directory), error)
+    directives, forced_includes = parse_directives(result.stdout, directory)
+    lines = directive_lines(edges, directives, error)
     includes = [
         Include(includer, included, line)
         for (includer, included), line in zip(edges, lines, strict=True)
-    ]
+    ] + forced_includes
     if result.returncode == 0:
         return includes, None
     failure = Failure(

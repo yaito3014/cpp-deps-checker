@@ -48,8 +48,16 @@ def test_parse_directives_tracks_lines_through_line_markers() -> None:
             '# 1 "m.cpp"',
             '# 1 "<built-in>" 1',
             '# 1 "<command line>" 1',
+            '# 1 "<built-in>" 2',
             '#include "forced.hpp"' + _DI,
+            '# 1 "<built-in>"',
             '# 1 "./forced.hpp" 1',
+            '#include "inner.hpp"' + _DI,
+            '# 1 "./forced.hpp"',
+            '# 1 "./inner.hpp" 1',
+            '# 2 "./forced.hpp" 2',
+            # Skipped by its guard: -dI does not say which file it is.
+            '#include "skipped.hpp"' + _DI,
             '# 2 "<built-in>" 2',
             '# 1 "m.cpp" 2',
             "",
@@ -72,12 +80,20 @@ def test_parse_directives_tracks_lines_through_line_markers() -> None:
         ]
     )
     m, a = Path("/build/m.cpp"), Path("/build/inc/a.hpp")
+    forced = Path("/build/forced.hpp")
 
-    assert parse_directives(output, directory=Path("/build")) == [
+    directives, forced_includes = parse_directives(output, directory=Path("/build"))
+
+    assert directives == [
         Directive(m, 3, Path("/build/inc/a.hpp")),
         Directive(a, 1, None),
         Directive(m, 5, Path('/usr/include/s\\x"y.h')),
         Directive(m, 6, None),
+    ]
+    # -H prints neither a -include header nor what it includes.
+    assert forced_includes == [
+        Include(m, forced, None),
+        Include(forced, Path("/build/inner.hpp"), 1),
     ]
 
 
@@ -181,14 +197,22 @@ def test_preprocessing_failure_is_returned_with_edges_so_far(tmp_path: Path) -> 
     assert "missing.hpp" in failure.output
 
 
-def _commands(directory: Path, *sources: str) -> Path:
+def _commands(directory: Path, *sources: str, flags: tuple[str, ...] = ()) -> Path:
     commands = directory / "compile_commands.json"
     commands.write_text(
         json.dumps(
             [
                 {
                     "directory": str(directory),
-                    "arguments": ["clang++", "-Iinc", "-c", s, "-o", f"{s}.o"],
+                    "arguments": [
+                        "clang++",
+                        "-Iinc",
+                        *flags,
+                        "-c",
+                        s,
+                        "-o",
+                        f"{s}.o",
+                    ],
                     "file": s,
                 }
                 for s in sources
@@ -270,4 +294,26 @@ def test_an_edge_keeps_its_line_from_another_translation_unit(
                 Include(root / "good.cpp", a, 1),
             ]
         )
+    )
+
+
+def test_headers_included_with_the_include_option(tmp_path: Path) -> None:
+    (tmp_path / "inc").mkdir()
+    (tmp_path / "inc/a.hpp").write_text(_guarded("a.hpp", '#include "b.hpp"\n'))
+    (tmp_path / "inc/b.hpp").write_text(_guarded("b.hpp"))
+    (tmp_path / "inc/c.hpp").write_text(_guarded("c.hpp"))
+    (tmp_path / "m.cpp").write_text('#include "c.hpp"\n')
+    root = tmp_path.resolve()
+    m, a, b, c = (
+        root / "m.cpp",
+        root / "inc/a.hpp",
+        root / "inc/b.hpp",
+        root / "inc/c.hpp",
+    )
+    commands = _commands(tmp_path, "m.cpp", flags=("-include", "a.hpp"))
+
+    collection = collect(commands, keep=lambda _: True)
+
+    assert collection.includes == tuple(
+        sorted([Include(m, a, None), Include(a, b, 3), Include(m, c, 1)])
     )
