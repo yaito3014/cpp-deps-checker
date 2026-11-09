@@ -1,4 +1,6 @@
 #include <cpp_deps_checker/cli/cli.hpp>
+#include <cpp_deps_checker/model/model.hpp>
+#include <cpp_deps_checker/ownership/ownership.hpp>
 #include <cpp_deps_checker/report/report.hpp>
 #include <cpp_deps_checker/testing/fixture.hpp>
 
@@ -7,6 +9,7 @@
 
 #include <fstream>
 #include <initializer_list>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -297,4 +300,23 @@ TEST_CASE("a summary that cannot be written fails, even when the check is clean"
 
   CHECK(r.status == 2);
   CHECK_THAT(r.err, ContainsSubstring(dir.path().string()));
+}
+
+TEST_CASE("a dependency fetched into a build directory inside the source tree is external")
+{
+  temporary_directory const dir;
+  auto const source = dir.path() / "source";
+  fs::copy(testing::fixture("external_fetched"), source, fs::copy_options::recursive);
+  auto const build = testing::configure(source, source / "build");
+
+  auto const project = model::load(build.dir, build.trace);
+  REQUIRE(project);
+  std::set<std::string> external;
+  for (auto const& id : ownership::find_external(*project)) {
+    external.insert(project->find(id)->name);
+  }
+  CHECK(external == std::set<std::string>{"dep", "dep_main"});
+  auto const r = run({"check", build.dir.string()});
+  CHECK(r.status == 0);
+  CHECK(r.out.empty());
 }
