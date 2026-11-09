@@ -14,5 +14,4 @@ find_library(
 # below private to clang/ (rule 5), and the command line links collect.
 add_subdirectory(llvm)
 add_subdirectory(includes)
-add_subdirectory(collect)
 add_subdirectory(tidy)

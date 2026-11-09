@@ -1,3 +1,4 @@
+add_subdirectory(collect)
 add_subdirectory(report)
 
 add_library(cpp_deps_checker_cli)
