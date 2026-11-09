@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <ios>
 #include <iterator>
 #include <optional>
 #include <set>
@@ -58,7 +59,13 @@ struct options {
   if (!in) {
     return std::unexpected{std::format("cannot read {}", file.string())};
   }
-  return std::string{std::istreambuf_iterator<char>{in}, {}};
+  // A directory opens, then fails to read, and libstdc++'s filebuf throws on a
+  // read error.
+  try {
+    return std::string{std::istreambuf_iterator<char>{in}, {}};
+  } catch (std::ios_base::failure const& error) {
+    return std::unexpected{std::format("cannot read {}: {}", file.string(), error.what())};
+  }
 }
 
 // Every rule's input; without compile_commands there are no includes. A

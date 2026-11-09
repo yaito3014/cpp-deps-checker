@@ -336,3 +336,16 @@ TEST_CASE("a C++20 project is checked before its first build")
   CHECK(r.status == 1);
   CHECK(lines(r.out) == std::vector<std::string>{"a/a.cpp:2: error: a includes a/b/c/include/c/c.hpp of c without linking c directly [direct-layering]"});
 }
+
+TEST_CASE("a baseline that cannot be read is unusable input")
+{
+  temporary_directory const dir;
+  auto const build = configured("definition_order_imported", dir);
+  auto const baseline = dir.path() / "base.md";
+  fs::create_directory(baseline);
+
+  auto const r = run({"check", build.dir.string(), "--summary", (dir.path() / "s.md").string(), "--baseline", baseline.string()});
+
+  CHECK(r.status == 2);
+  CHECK_THAT(r.err, ContainsSubstring("cannot read " + baseline.string()));
+}
