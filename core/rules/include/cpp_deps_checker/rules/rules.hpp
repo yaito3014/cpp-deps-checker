@@ -60,7 +60,9 @@ struct violation {
 // Every rule's input.
 struct context {
   model::project project;
-  std::vector<include> includes;  // only those whose includer has an owner
+  // Only those whose includer has an owner; unset when they were not collected,
+  // so rules 3, 3a, and 4 did not run.
+  std::optional<std::vector<include>> includes;
   // Only header set verification translation units; any other failure makes
   // the input unusable.
   std::vector<failure> failures;

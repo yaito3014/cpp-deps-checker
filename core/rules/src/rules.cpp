@@ -6,6 +6,7 @@
 #include <iterator>
 #include <map>
 #include <ranges>
+#include <span>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -548,13 +549,14 @@ std::vector<violation> check(context const& ctx)
   std::vector<violation> out;
   cycles(ctx, out);
   definition_order(ctx, out);
-  for (auto const& directive : ctx.includes) {
+  auto const includes = ctx.includes ? std::span<include const>{*ctx.includes} : std::span<include const>{};
+  for (auto const& directive : includes) {
     if (auto v = direct_layering(ctx, directive)) {
       out.push_back(*std::move(v));
     }
   }
   self_contained(ctx, out);
-  for (auto const& directive : ctx.includes) {
+  for (auto const& directive : includes) {
     if (auto v = entry_point(ctx, directive)) {
       out.push_back(*std::move(v));
     }
