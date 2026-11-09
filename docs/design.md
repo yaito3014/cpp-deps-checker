@@ -125,11 +125,11 @@ The three names change together if the codename is replaced.
 
 The Action (`action.yml`, composite) runs these steps, the shell parts in `action/run.sh`:
 
-1. Install the tool with uv from the Action's own checkout.
+1. Get the tool, with `action/llvm.sh` and `action/build.sh`: add apt.llvm.org's development snapshot, which carries LLVM 24 until its release, and restore a cached build keyed on the runner's OS, the snapshot's version, and a hash of the tool's sources. The key includes the snapshot because the tool links LLVM's shared libraries, whose ABI moves with the snapshot. On a miss, install the development packages, build only the executable (Release, no tests) with vcpkg at the manifest's builtin baseline, and save it; on a hit, install only the runtime packages (`libllvm24`, `libclang-cpp24`, and `libclang-common-24-dev` for Clang's builtin headers).
 2. Configure the consumer project with `action/configure.sh`, which the tests use too: a File API `codemodel-v2` query, the JSON trace, `CMAKE_EXPORT_COMPILE_COMMANDS=ON`, `CMAKE_OPTIMIZE_DEPENDENCIES=OFF`, and `CMAKE_VERIFY_INTERFACE_HEADER_SETS=ON`, plus the `cmake-args` input (default: the Clang compilers).
 3. Write the graph with `cpp-deps-checker graph`.
 4. If `base-ref` is set (default: the pull request's base branch), fetch its tip (`--depth=1` only if the clone is already shallow), check it out in a git worktree, configure the same source directory there, and write its graph as the baseline. If any of this fails, warn and leave the new edges unlisted.
-5. Run `cpp-deps-checker check --annotations --summary "$GITHUB_STEP_SUMMARY"`, with `--baseline` when step 4 succeeded. It also runs the Clang `-H` pass over `compile_commands.json`.
+5. Run `cpp-deps-checker check --annotations --summary "$GITHUB_STEP_SUMMARY"`, with `--baseline` when step 4 succeeded. It also collects the includes of every translation unit in `compile_commands.json`.
 6. Upload the graph as an artifact, then fail the job if the check failed.
 
 The consumer repository holds one config file. Proposed name `.cpp-deps-checker.toml` (not yet decided), with these keys:
@@ -242,7 +242,7 @@ The plugin must be built with the same LLVM version as the tool that loads it, a
 
 ### Open questions
 
-- How the Action ships the C++ command line: per-platform release binaries, or a source build on the runner (which then needs LLVM 24 development packages).
+- Once LLVM 24 is released: whether the Action keeps building on the runner from the stable packages, or ships release binaries.
 
 ## Unverified claims and open items
 
