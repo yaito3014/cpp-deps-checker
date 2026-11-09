@@ -158,6 +158,7 @@ cli/
   report/     # text, GitHub annotations, job summary, Mermaid graph
   main        # composition root of the command line
 clang/
+  llvm/       # LLVM's include directories and definitions, as a target
   includes/   # PPCallbacks -> include records, shared by the collector and the plugin
   collect/    # libTooling run over compile_commands.json (used by cli)
   tidy/       # clang-tidy module, loaded by clang-tidy --load and clangd --load
