@@ -18,6 +18,7 @@ def _components(model: Model) -> list[list[str]]:
     stack: list[str] = []
     on_stack: set[str] = set()
     components: list[list[str]] = []
+    position = {t: i for i, t in enumerate(model.targets)}
 
     def enter(source: str) -> tuple[str, Iterator[str]]:
         index[source] = low[source] = len(index)
@@ -49,7 +50,7 @@ def _components(model: Model) -> list[list[str]]:
                         member = stack.pop()
                         on_stack.discard(member)
                         members.add(member)
-                    components.append([t for t in model.targets if t in members])
+                    components.append(sorted(members, key=position.__getitem__))
     return components
 
 
