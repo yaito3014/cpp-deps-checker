@@ -93,7 +93,7 @@ Re-checked on CMake 4.4.5 with the same fixture (`tests/fixtures/model_basics`):
 
 Test targets are exempt from the privacy and placement rules (5 and 6) and may include `detail/` headers, but every other rule still applies to them. Tests usually live in a separate directory, and many build tools expect that, so treating them as ordinary consumers would make rule 5 fail on almost every project.
 
-**Identification.** The consumer config lists directory globs and name patterns, defaulting to `tests/**` and `test/**` with no name patterns. A target is a test target, including a test helper library, if the path of the `CMakeLists.txt` that defines it, relative to the top-level source directory, matches a directory glob (`pathlib.PurePath.full_match`, where `**` spans any number of segments), or if its name matches a name pattern (`fnmatch`, case-sensitive). The defaults match only top-level `tests/` and `test/` directories; per-library test directories need `**/tests/**`. External targets are never test targets, and a header set verification target is one exactly when the target it verifies is. Until the config file is decided, the CLI uses the defaults. CTest registration is not used because it knows only test executables.
+**Identification.** The consumer config lists directory globs and name patterns, defaulting to `**/tests/**` and `**/test/**` with no name patterns. A target is a test target, including a test helper library, if the path of the `CMakeLists.txt` that defines it, relative to the top-level source directory, matches a directory glob (`pathlib.PurePath.full_match`, where `**` spans any number of segments), or if its name matches a name pattern (`fnmatch`, case-sensitive). The defaults match `tests/` and `test/` directories at any depth, so per-library test directories count too (`**` also matches no segment, so `tests/CMakeLists.txt` matches `**/tests/**`). External targets are never test targets, and a header set verification target is one exactly when the target it verifies is. Until the config file is decided, the CLI uses the defaults. CTest registration is not used because it knows only test executables.
 
 | Rule | Applies to test targets? |
 | --- | --- |
@@ -135,7 +135,7 @@ The consumer repository holds one config file. Proposed name `.cpp-deps-checker.
 composition_roots = ["app"]
 
 [tests]
-dirs = ["tests/**", "test/**"]
+dirs = ["**/tests/**", "**/test/**"]
 names = []
 
 [[exception]]
