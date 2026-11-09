@@ -20,6 +20,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "import-linter>=2.16",
     "pytest>=9.2.0",
     "ruff>=0.17.4",
     "ty>=0.0.99",
@@ -33,3 +34,18 @@ error-on-warning = true
 
 [tool.pytest]
 testpaths = ["tests"]
+
+[tool.importlinter]
+root_package = "cpp_deps_checker"
+
+[[tool.importlinter.contracts]]
+name = "Modules import only lower layers"
+type = "layers"
+containers = ["cpp_deps_checker"]
+layers = [
+    "cli",
+    "report",
+    "rules",
+    "classify | includes",
+    "model",
+]

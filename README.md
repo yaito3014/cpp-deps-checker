@@ -48,6 +48,7 @@ uv sync
 uv run ruff format --check
 uv run ruff check
 uv run ty check
+uv run lint-imports
 uv run pytest
 uvx --from shellcheck-py shellcheck action/*.sh
 uvx --from actionlint-py actionlint
