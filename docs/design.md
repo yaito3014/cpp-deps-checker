@@ -178,7 +178,7 @@ Keeping `includes` free of target knowledge means replacing `-H` with another co
 
 ## Testing
 
-Tests come first. Each rule has fixture CMake projects under `tests/fixtures/<case>/` that contain exactly one violation, with a test asserting the violation and its `file:line`. The exception is a cycle: every cycle has an edge to a later-defined target, so a rule 1 fixture also violates rule 2. Rule 6 applies to every fixture, so fixtures nest each single-consumer dependency under its consumer to keep exactly one violation. Graph logic that needs no CMake (larger components, acyclic graphs, dominators) is unit-tested on a hand-built `Model`. The tool's own tests use pytest.
+Tests come first. Each rule has fixture CMake projects under `tests/fixtures/<case>/` that contain exactly one violation, with a test asserting the violation and its `file:line`. The exception is a cycle: every cycle has an edge to a later-defined target, so a rule 1 fixture also violates rule 2. Rule 6 applies to every fixture, so fixtures nest each single-consumer dependency under its consumer to keep exactly one violation. Graph logic that needs no CMake (larger components, acyclic graphs, dominators) is unit-tested on a hand-built `Model`. The tool's own tests use pytest. CI (`.github/workflows/ci.yml`) runs them, and runs the Action itself on a clean fixture and on one with a cycle.
 
 ## Unverified claims and open items
 
@@ -186,7 +186,6 @@ These claims are approximate until checked:
 
 - `CMAKE_OPTIMIZE_DEPENDENCIES=ON` is known to strip `dependencies`; whether it also affects the four dependency fields is unknown.
 - Generated headers may require a build before the `-H` pass can preprocess every TU.
-- `action.yml` has not run on GitHub; it is checked only with actionlint, through a workflow that uses it locally.
 
 Open decisions:
 
