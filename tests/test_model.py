@@ -11,9 +11,10 @@ from cpp_deps_checker.model import (
     Model,
     StaleReplyError,
     Target,
+    UnsupportedReplyError,
     load,
 )
-from tests.harness import FIXTURES, configure
+from tests.harness import CONFIGURE, FIXTURES, configure
 
 
 def _target(model: Model, name: str) -> Target:
@@ -139,6 +140,29 @@ def test_top_level_directories(tmp_path: Path) -> None:
 
 def test_missing_reply_is_reported(tmp_path: Path) -> None:
     with pytest.raises(MissingReplyError, match="no File API reply"):
+        load(tmp_path, tmp_path / "trace.json")
+
+
+def test_reply_without_a_codemodel_is_reported(tmp_path: Path) -> None:
+    query = tmp_path / ".cmake/api/v1/query"
+    query.mkdir(parents=True)
+    (query / "cache-v2").touch()
+    subprocess.run(
+        ["cmake", "-S", FIXTURES / "minimal", "-B", tmp_path, "-G", "Ninja"],
+        check=True,
+    )
+
+    with pytest.raises(MissingReplyError, match="codemodel-v2"):
+        load(tmp_path, tmp_path / "trace.json")
+
+
+def test_multi_config_generator_is_reported(tmp_path: Path) -> None:
+    subprocess.run(
+        [CONFIGURE, FIXTURES / "minimal", tmp_path, "-G", "Ninja Multi-Config"],
+        check=True,
+    )
+
+    with pytest.raises(UnsupportedReplyError, match="multi-config"):
         load(tmp_path, tmp_path / "trace.json")
 
 

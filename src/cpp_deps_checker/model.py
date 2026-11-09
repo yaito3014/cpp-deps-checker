@@ -20,6 +20,10 @@ class StaleReplyError(ReplyError):
     """The last configure failed, so the File API reply describes an older run."""
 
 
+class UnsupportedReplyError(ReplyError):
+    """The reply describes a build the checker does not handle yet."""
+
+
 @dataclass(frozen=True)
 class Location:
     # As in the reply's backtraceGraph: relative to the top-level source
@@ -257,10 +261,20 @@ def load(build_dir: Path, trace: Path) -> Model:
     """Load the File API reply in build_dir, ordered by the JSON trace."""
     reply_dir = build_dir / ".cmake" / "api" / "v1" / "reply"
     index = _read(_current_index(reply_dir))
+    if "codemodel-v2" not in index["reply"]:
+        raise MissingReplyError(
+            f"no codemodel-v2 reply in {reply_dir}; configure with a codemodel-v2 query"
+        )
     codemodel = _read(reply_dir / index["reply"]["codemodel-v2"]["jsonFile"])
-    # Single-config generators only; which configuration a multi-config
-    # generator should be checked in is an open decision in docs/design.md.
-    (configuration,) = codemodel["configurations"]
+    # Which configuration a multi-config generator should be checked in is an
+    # open decision in docs/design.md.
+    configurations = codemodel["configurations"]
+    if len(configurations) != 1:
+        raise UnsupportedReplyError(
+            f"the reply has {len(configurations)} configurations; multi-config "
+            "generators are not supported yet"
+        )
+    (configuration,) = configurations
     entries = [*configuration["targets"], *configuration["abstractTargets"]]
     source_dir = Path(codemodel["paths"]["source"]).resolve()
     trace_order = _trace_order(trace)
