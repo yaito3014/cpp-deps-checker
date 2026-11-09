@@ -1,5 +1,5 @@
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Protocol
@@ -45,9 +45,18 @@ class Owners:
     listed: Mapping[Path, Owner | None]
     base_directories: _Index
     source_directories: _Index
+    # Several rules ask for the owners of the same include edges.
+    _memo: dict[Path, Owner | None] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
     def of(self, path: Path) -> Owner | None:
         """Owner of an absolute, resolved path; None if unowned or ambiguous."""
+        if path not in self._memo:
+            self._memo[path] = self._find(path)
+        return self._memo[path]
+
+    def _find(self, path: Path) -> Owner | None:
         if path in self.listed:
             return self.listed[path]
         for index in (self.base_directories, self.source_directories):

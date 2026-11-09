@@ -5,6 +5,13 @@ from cpp_deps_checker.rules._core import Context, Level, Violation
 
 def _violations(ctx: Context) -> Iterator[Violation]:
     model = ctx.model
+    compile_ids = {
+        t.id: {d.target for d in t.compile_dependencies} for t in model.targets.values()
+    }
+    interface_ids = {
+        t.id: {d.target for d in t.interface_compile_dependencies}
+        for t in model.targets.values()
+    }
     for include in ctx.includes:
         includer = ctx.owners.of(include.includer)
         included = ctx.owners.of(include.included)
@@ -12,19 +19,18 @@ def _violations(ctx: Context) -> Iterator[Violation]:
             continue
         consumer = model.targets[includer.target]
         dependency = model.targets[included.target]
-        compile_ids = {d.target for d in consumer.compile_dependencies}
-        interface_ids = {d.target for d in consumer.interface_compile_dependencies}
         header = model.locate(include.included, None)
         if includer.public:
-            if dependency.id in interface_ids:
+            if dependency.id in interface_ids[consumer.id]:
                 continue
-            how = "links PRIVATE" if dependency.id in compile_ids else "does not link"
+            linked = dependency.id in compile_ids[consumer.id]
+            how = "links PRIVATE" if linked else "does not link"
             message = (
                 f"public header of {consumer.name} includes {header} of "
                 f"{dependency.name}, which {consumer.name} {how}; link it PUBLIC"
             )
         else:
-            if dependency.id in compile_ids:
+            if dependency.id in compile_ids[consumer.id]:
                 continue
             message = (
                 f"{consumer.name} includes {header} of {dependency.name} without "
