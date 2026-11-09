@@ -1,6 +1,4 @@
-# cpp-deps-checker: design handoff
-
-As of 2026-11-07.
+# cpp-deps-checker design
 
 ## Purpose and scope
 
