@@ -133,7 +133,18 @@ std::string annotation(rules::violation const& violation, std::filesystem::path 
 
 graph make_graph(model::project const& project, std::set<std::string> const& tests, std::set<std::string> const& external)
 {
-  auto const shown = [](model::target const* t) { return t && !t->verifies && t->type != "UTILITY"; };
+  auto const linkable = [](model::target const* t) { return t && !t->verifies && t->type != "UTILITY"; };
+  std::set<std::string> linked_external;
+  for (auto const& target : project.targets()) {
+    if (linkable(&target) && !external.contains(target.id)) {
+      for (auto const& dependency : target.declared_dependencies()) {
+        if (external.contains(dependency.target)) {
+          linked_external.insert(dependency.target);
+        }
+      }
+    }
+  }
+  auto const shown = [&](model::target const* t) { return linkable(t) && (!external.contains(t->id) || linked_external.contains(t->id)); };
   graph result;
   for (auto const& target : project.targets()) {
     if (!shown(&target)) {

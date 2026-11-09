@@ -90,6 +90,24 @@ TEST_CASE("the graph has declared targets and edges by name")
   );
 }
 
+TEST_CASE("the graph leaves out external targets that no project target links")
+{
+  auto const p = testing::project({
+      placed("app", ".", {"ext::x"}, {.type = "EXECUTABLE"}),
+      placed("ext::x", ".", {"ext::y"}, {.imported = true}),
+      placed("ext::y", ".", {}, {.imported = true}),
+      placed("ext::unused", ".", {}, {.imported = true}),
+  });
+
+  CHECK(
+      report::make_graph(p, {}, {"ext::x", "ext::y", "ext::unused"})
+      == graph{
+          {{"app", kind::production}, {"ext::x", kind::external}},
+          {{"app", "ext::x"}},
+      }
+  );
+}
+
 TEST_CASE("mermaid lists sorted nodes, then edges")
 {
   graph const g{

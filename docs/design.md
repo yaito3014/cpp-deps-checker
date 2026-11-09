@@ -22,7 +22,7 @@ Eight rules fail the check, one only warns, and two produce output. Every violat
 | 5 | Nesting is privacy | A target nested under a parent directory (defined below) is consumed only by targets defined in that directory or below it. An outside consumer fails at its link with a "hoist: private detail is becoming shared API" message | error |
 | 6 | Placement | A target placed above the lowest common ancestor of its consumers: over the production graph, rooted at the composition roots, T's immediate dominator D is that ancestor, and T must be defined in D's directory or below it. Reported at T's definition. A target whose only dominator is the virtual root above several composition roots has no placement | warning |
 | 7 | Test isolation | No non-test target links a test target | error |
-| 8 | Graph | `cpp-deps-checker graph` writes the declared edges between targets, by name, as a Mermaid flowchart in a Markdown file (rendered by GitHub). Header set verification targets and UTILITY targets (which cannot be linked) are left out; test and external targets are styled apart | output |
+| 8 | Graph | `cpp-deps-checker graph` writes the declared edges between targets, by name, as a Mermaid flowchart in a Markdown file (rendered by GitHub). Header set verification targets, UTILITY targets (which cannot be linked), and external targets that no project target links are left out; test and external targets are styled apart | output |
 | 9 | New edges | Edges of the graph (rule 8) that the base branch's graph lacks, listed in the job summary after a table of every violation | output |
 
 Definitions used by the rules:
