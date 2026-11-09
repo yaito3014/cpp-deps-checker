@@ -11,7 +11,7 @@ cmake --preset default -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
 cmake --build --preset default --target cpp_deps_checker_main
 ```
 
-The executable is `build/default/cli/cpp-deps-checker`.
+The executable is `build/default/cli/cpp-deps-checker`. The clang-tidy and clangd plugin is the target `cpp_deps_checker_tidy`, built as `build/default/clang/tidy/libcpp-deps-checker-tidy.so`; it loads only into clang-tidy and clangd of the LLVM it was built with, and nothing checks this at load time.
 
 ## Usage
 
@@ -51,6 +51,25 @@ jobs:
 ```
 
 The runner must be a GitHub-hosted Ubuntu runner (it uses `sudo apt-get`) with CMake 4.2 or later, Clang, and whatever generator `cmake-args` names. The Action installs LLVM 24 from apt.llvm.org's development snapshot, builds the tool from its own checkout, and caches the build per tool version and LLVM snapshot; the snapshot changes often, so expect a build of a few minutes when it has. It annotates the violations, writes a job summary with every violation and the edges new since `base-ref` (default: the pull request's base branch, configured a second time in a git worktree, without submodules), and uploads the graph as the artifact `artifact-name` (default `cpp-deps-graph`). `cmake-args` is split on whitespace, without quoting.
+
+## clang-tidy and clangd
+
+The plugin adds rules 3 and 4 to clang-tidy and clangd 24 as the checks `cpp-deps-direct-layering` and `cpp-deps-entry-point`. Each translation unit is checked against the File API reply in its compile command's directory or the nearest parent that has one, read again after each configure, so the build directory needs only the File API query and `CMAKE_OPTIMIZE_DEPENDENCIES=OFF`. A directory without a usable reply gets one `clang-tidy-config` warning per configure.
+
+```sh
+clang-tidy --load=build/default/clang/tidy/libcpp-deps-checker-tidy.so --checks='-*,cpp-deps-*' -p build src/a.cpp
+```
+
+Start clangd with `--load=/path/to/libcpp-deps-checker-tidy.so` and enable the checks in `.clangd`. clangd runs a check it does not know to be fast only with `FastCheckFilter: Loose`:
+
+```yaml
+Diagnostics:
+  ClangTidy:
+    Add: cpp-deps-*
+    FastCheckFilter: Loose
+```
+
+clangd checks the include directives of the open file only, and does not show the warning about a missing reply.
 
 ## Development
 
