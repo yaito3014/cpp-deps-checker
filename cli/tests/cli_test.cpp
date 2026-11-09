@@ -401,6 +401,49 @@ TEST_CASE("a config file that does not read is unusable input")
   CHECK_THAT(r.err, ContainsSubstring(".cpp-deps-checker.yaml"));
 }
 
+TEST_CASE("check leaves out the violations the config file's exceptions allow")
+{
+  temporary_directory const dir;
+  auto const build = configured_with(
+      "test_isolation_helper",
+      "exceptions:\n"
+      "  - rule: test-isolation\n"
+      "    from: app\n"
+      "    to: test_helper\n"
+      "    reason: the helper is a fake shipped with app\n",
+      dir
+  );
+
+  auto const r = run({"check", build.dir.string()});
+
+  CAPTURE(r.err);
+  CHECK(r.status == 0);
+  CHECK(r.out.empty());
+}
+
+TEST_CASE("an exception that allows nothing is a warning at the config file")
+{
+  temporary_directory const dir;
+  auto const build = configured_with("minimal", "exceptions:\n  - {rule: placement, target: lib, reason: loaded by plugins}\n", dir);
+
+  auto const r = run({"check", build.dir.string()});
+
+  CAPTURE(r.err);
+  CHECK(r.status == 0);
+  CHECK(lines(r.out) == std::vector<std::string>{".cpp-deps-checker.yaml: warning: exception to placement for lib matches no violation [stale-exception]"});
+}
+
+TEST_CASE("an exception without a reason is unusable input")
+{
+  temporary_directory const dir;
+  auto const build = configured_with("minimal", "exceptions:\n  - {rule: placement, target: lib}\n", dir);
+
+  auto const r = run({"check", build.dir.string()});
+
+  CHECK(r.status == 2);
+  CHECK_THAT(r.err, ContainsSubstring(".cpp-deps-checker.yaml: exceptions[0]: needs a reason"));
+}
+
 TEST_CASE("a composition root that names no production target is unusable input")
 {
   temporary_directory const dir;

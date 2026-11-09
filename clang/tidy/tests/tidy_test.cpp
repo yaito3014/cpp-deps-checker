@@ -141,6 +141,21 @@ TEST_CASE("the include rules have fixtures")
   CHECK(with_include_violations >= 4);
 }
 
+TEST_CASE("clang-tidy leaves out the violations the config file's exceptions allow")
+{
+  temporary_directory const dir;
+  auto const source = dir.path() / "source";
+  fs::copy(testing::fixture("direct_layering_transitive"), source, fs::copy_options::recursive);
+  std::ofstream{source / ".cpp-deps-checker.yaml"} << "exceptions:\n  - {rule: direct-layering, from: a, to: c, reason: moving}\n";
+  auto const build = testing::configure(source, dir.path() / "build");
+
+  auto const result = clang_tidy(build.dir, sources(build.compile_commands));
+
+  CAPTURE(result.out, result.err);
+  CHECK(reported(result.out, fs::canonical(source)).empty());
+  CHECK_FALSE((result.out + result.err).contains("cpp-deps-checker:"));
+}
+
 TEST_CASE("a header given with -include is reported at the start of the main file")
 {
   temporary_directory const dir;
