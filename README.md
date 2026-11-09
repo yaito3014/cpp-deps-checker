@@ -15,7 +15,7 @@ The executable is `build/default/cli/cpp-deps-checker`. The clang-tidy and clang
 
 ## Usage
 
-Configure the project with Clang, a File API query, a JSON trace, a compilation database, and interface header set verification, then check the build directory. Implemented so far: rule 1 (no cycles), rule 2 (definition order), rule 3 (direct layering), rule 3a (self-contained headers), rule 4 (entry point only), rule 5 (nesting is privacy), rule 6 (placement, a warning), and rule 7 (test isolation). Test targets are those defined in a `tests/` or `test/` directory at any depth, and the composition roots are the production targets nothing else links; neither is configurable yet. External targets (imported, or defined outside the source tree or in a build directory inside it, as FetchContent dependencies are) own no files and are exempt from rules 2, 3a, 5 and 6.
+Configure the project with Clang, a File API query, a JSON trace, a compilation database, and interface header set verification, then check the build directory. Implemented so far: rule 1 (no cycles), rule 2 (definition order), rule 3 (direct layering), rule 3a (self-contained headers), rule 4 (entry point only), rule 5 (nesting is privacy), rule 6 (placement, a warning), and rule 7 (test isolation). By default, test targets are those defined in a `tests/` or `test/` directory at any depth, and the composition roots are the production targets nothing else links; `.cpp-deps-checker.yaml` in the top-level source directory changes both (see below). External targets (imported, or defined outside the source tree or in a build directory inside it, as FetchContent dependencies are) own no files and are exempt from rules 2, 3a, 5 and 6.
 
 ```sh
 mkdir -p build/.cmake/api/v1/query
@@ -25,6 +25,14 @@ cmake -S . -B build -DCMAKE_CXX_COMPILER=clang++ \
   -DCMAKE_VERIFY_INTERFACE_HEADER_SETS:BOOL=ON \
   --trace-format=json-v1 --trace-expand --trace-redirect=build/trace.json
 cpp-deps-checker check build
+```
+
+```yaml
+# .cpp-deps-checker.yaml; every key is optional.
+composition_roots: [app]  # target names
+tests:
+  directories: ["**/tests/**", "**/test/**"]  # globs of the defining CMakeLists.txt path
+  names: ["*_test"]                           # target name patterns
 ```
 
 [action/configure.sh](action/configure.sh) `SOURCE_DIR BUILD_DIR [CMAKE_ARG...]` runs the same configure; the Action and the tests use it.
@@ -54,7 +62,7 @@ The runner must be a GitHub-hosted Ubuntu runner (it uses `sudo apt-get`) with C
 
 ## clang-tidy and clangd
 
-The plugin adds rules 3 and 4 to clang-tidy and clangd 24 as the checks `cpp-deps-direct-layering` and `cpp-deps-entry-point`. Each translation unit is checked against the File API reply in its compile command's directory or the nearest parent that has one, read again after each configure, so the build directory needs only the File API query and `CMAKE_OPTIMIZE_DEPENDENCIES=OFF`. A directory without a usable reply gets one `clang-tidy-config` warning per configure.
+The plugin adds rules 3 and 4 to clang-tidy and clangd 24 as the checks `cpp-deps-direct-layering` and `cpp-deps-entry-point`. Each translation unit is checked against the File API reply in its compile command's directory or the nearest parent that has one, and with the project's config file, both read again after a configure or a change to the config file, so the build directory needs only the File API query and `CMAKE_OPTIMIZE_DEPENDENCIES=OFF`. A directory without a usable reply or config gets one `clang-tidy-config` warning per configure or config change.
 
 ```sh
 clang-tidy --load=build/default/clang/tidy/libcpp-deps-checker-tidy.so --checks='-*,cpp-deps-*' -p build src/a.cpp
