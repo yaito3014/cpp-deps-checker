@@ -219,10 +219,12 @@ TEST_CASE("a translation unit missing several headers keeps the lines it found")
   CHECK(collection.failures.size() == 1);
 }
 
-TEST_CASE("an unreadable compilation database is an error")
+TEST_CASE("an unreadable compilation database is an error naming it")
 {
   temporary_directory const dir;
-  CHECK_FALSE(collect::collect(dir.path() / "compile_commands.json", [](fs::path const&) { return true; }));
+  auto const result = collect::collect(dir.path() / "compile_commands.json", [](fs::path const&) { return true; });
+  REQUIRE_FALSE(result);
+  CHECK_THAT(result.error(), Catch::Matchers::ContainsSubstring((dir.path() / "compile_commands.json").string()));
 }
 
 TEST_CASE("Clang's own headers are LLVM 24's, whatever the compile command's compiler")
