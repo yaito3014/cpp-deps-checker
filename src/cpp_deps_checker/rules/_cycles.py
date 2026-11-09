@@ -8,35 +8,48 @@ type _Edge = tuple[str, Dependency]  # source id, dependency
 
 
 def _components(model: Model) -> list[list[str]]:
-    """Tarjan's strongly connected components, each in model order."""
+    """Tarjan's strongly connected components, each in model order.
+
+    Iterative, so that a deep dependency chain does not hit Python's
+    recursion limit.
+    """
     index: dict[str, int] = {}
     low: dict[str, int] = {}
     stack: list[str] = []
     on_stack: set[str] = set()
     components: list[list[str]] = []
 
-    def visit(source: str) -> None:
+    def enter(source: str) -> tuple[str, Iterator[str]]:
         index[source] = low[source] = len(index)
         stack.append(source)
         on_stack.add(source)
-        for dependency in model.targets[source].declared_dependencies:
-            target = dependency.target
-            if target not in index:
-                visit(target)
-                low[source] = min(low[source], low[target])
-            elif target in on_stack:
-                low[source] = min(low[source], index[target])
-        if low[source] == index[source]:
-            members: set[str] = set()
-            while not members or source not in members:
-                member = stack.pop()
-                on_stack.discard(member)
-                members.add(member)
-            components.append([t for t in model.targets if t in members])
+        dependencies = model.targets[source].declared_dependencies
+        return source, (d.target for d in dependencies)
 
-    for target in model.targets:
-        if target not in index:
-            visit(target)
+    for root in model.targets:
+        if root in index:
+            continue
+        work = [enter(root)]
+        while work:
+            source, targets = work[-1]
+            for target in targets:
+                if target not in index:
+                    work.append(enter(target))
+                    break
+                if target in on_stack:
+                    low[source] = min(low[source], index[target])
+            else:
+                work.pop()
+                if work:
+                    parent = work[-1][0]
+                    low[parent] = min(low[parent], low[source])
+                if low[source] == index[source]:
+                    members: set[str] = set()
+                    while not members or source not in members:
+                        member = stack.pop()
+                        on_stack.discard(member)
+                        members.add(member)
+                    components.append([t for t in model.targets if t in members])
     return components
 
 

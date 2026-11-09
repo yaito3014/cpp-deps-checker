@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 from cpp_deps_checker.model import Location
@@ -37,3 +38,17 @@ def test_one_violation_per_component_with_shortest_cycle() -> None:
         "dependency cycle: a -> b -> a (also strongly connected: c)",
         "dependency cycle: d -> e -> d",
     ]
+
+
+def test_cycle_closed_only_through_a_dependency_of_a_dependency() -> None:
+    assert _check({"a": ["b"], "b": ["c"], "c": ["a"]}) == [
+        "dependency cycle: a -> b -> c -> a"
+    ]
+
+
+def test_chain_deeper_than_the_recursion_limit() -> None:
+    n = sys.getrecursionlimit() + 100
+    edges = {f"t{i}": [f"t{i + 1}"] for i in range(n)}
+    edges[f"t{n}"] = [f"t{n - 1}"]
+
+    assert _check(edges) == [f"dependency cycle: t{n - 1} -> t{n} -> t{n - 1}"]
