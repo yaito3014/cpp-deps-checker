@@ -217,7 +217,7 @@ The one design decision each target hides:
 - `rules`: the policy of each rule. `rules` owns the include record and the `Context` it checks, so the collectors depend on `rules`, not the other way round.
 - `report`: output formats and CI annotation syntax.
 - `clang/includes`: how includes are read from Clang (which callbacks, physical line from the hash location).
-- `clang/collect`: how translation units are run in-process (libTooling over the compilation database).
+- `clang/collect`: how translation units are run in-process (libTooling over the compilation database). An include's line is the directive's physical line, which `#line` does not change, so unlike the Python's `-dI` pairing a file using `#line` still gets lines; a header given with `-include` counts as included by the main file, without a line, unless a directive of the main file also includes it, as in the Python.
 - `clang/tidy`: how the check reaches the model from inside clang-tidy and clangd.
 
 Allowed edges, in topological order: `model`; `ownership` -> `model`; `rules` -> `ownership`, `model`; `report` -> `rules`, `model`; `clang/includes` -> `rules`; `clang/collect` -> `clang/includes`; `clang/tidy` -> `clang/includes`, `rules`, `ownership`, `model`; the command line -> everything but `clang/tidy`. `testing` -> `model` (it builds projects by hand), and only tests link it.
@@ -232,7 +232,7 @@ The plugin must be built with the same LLVM version as the tool that loads it, a
 
 - C++23, set with `target_compile_features`; CMake with FILE_SET public headers per target.
 - vcpkg for third-party libraries: glaze (JSON; needs C++23, built and tested by its authors with Clang 19+ and GCC 13+) and Catch2 for unit tests.
-- LLVM and Clang 24 from the system (`find_package(Clang CONFIG)`), not vcpkg; only the `clang/` targets link them.
+- LLVM 24 from the system (`find_package(LLVM 24 CONFIG)`), not vcpkg, and its `clang-cpp` library found next to it; Clang's own CMake package is not used, because on apt.llvm.org it also requires MLIR's. Only the `clang/` targets link them, for the plugin and the command line alike. libTooling finds Clang's builtin headers relative to `libclang-cpp`, so translation units get LLVM 24's whatever compiler their compile command names. Until LLVM 24 is released, CI installs apt.llvm.org's development snapshot.
 
 ### Testing
 

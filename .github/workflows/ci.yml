@@ -28,11 +28,21 @@ jobs:
           ninja --version
       - run: uv run pytest
 
-  # The C++ rewrite, built with vcpkg at the manifest's baseline.
+  # The C++ rewrite, built with vcpkg at the manifest's baseline and LLVM 24.
   cpp:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7.0.1
+      # LLVM 24 is not released yet: the development snapshot from apt.llvm.org.
+      - name: Install LLVM 24
+        run: |
+          . /etc/os-release
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key |
+            sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+          echo "deb https://apt.llvm.org/$VERSION_CODENAME/ llvm-toolchain-$VERSION_CODENAME main" |
+            sudo tee /etc/apt/sources.list.d/llvm.list >/dev/null
+          sudo apt-get update -q
+          sudo apt-get install -y -q llvm-24-dev libclang-24-dev libclang-cpp24-dev libclang-common-24-dev
       - name: Set up vcpkg
         run: |
           root=$RUNNER_TEMP/vcpkg
