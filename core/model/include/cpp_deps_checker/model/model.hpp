@@ -22,6 +22,9 @@ struct location {
   friend bool operator==(location const&, location const&) = default;
 };
 
+// file, or file:line.
+[[nodiscard]] std::string to_string(location const& where);
+
 struct dependency {
   std::string target;  // id of the target depended on
   std::optional<model::location> location;

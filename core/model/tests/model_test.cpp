@@ -382,3 +382,9 @@ TEST_CASE("a file in two file sets of a target is in both")
   CHECK(x.file_sets[1].visibility == "PRIVATE");
   CHECK(x.file_sets[1].files == std::vector{header});
 }
+
+TEST_CASE("a location prints as file or file:line")
+{
+  CHECK(model::to_string(model::location{"a/CMakeLists.txt", 3}) == "a/CMakeLists.txt:3");
+  CHECK(model::to_string(model::location{"/usr/include/x.h", std::nullopt}) == "/usr/include/x.h");
+}

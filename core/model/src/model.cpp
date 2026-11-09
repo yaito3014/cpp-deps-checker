@@ -309,6 +309,8 @@ target to_target(target_json const& data, fs::path const& source_dir, std::map<s
 
 }  // namespace
 
+std::string to_string(location const& where) { return where.line ? std::format("{}:{}", where.file.string(), *where.line) : where.file.string(); }
+
 std::vector<dependency> target::declared_dependencies() const
 {
   std::vector<dependency> first;
