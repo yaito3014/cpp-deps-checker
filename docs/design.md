@@ -182,6 +182,69 @@ Keeping `includes` free of target knowledge means replacing `-H` with another co
 
 Tests come first. Each rule has fixture CMake projects under `tests/fixtures/<case>/` that contain exactly one violation, with a test asserting the violation and its `file:line`. The exception is a cycle: every cycle has an edge to a later-defined target, so a rule 1 fixture also violates rule 2. Rule 6 applies to every fixture, so fixtures nest each single-consumer dependency under its consumer to keep exactly one violation. Graph logic that needs no CMake (larger components, acyclic graphs, dominators) is unit-tested on a hand-built `Model`. Each fixture that configures with the default arguments also has an `expected.txt`: `# exit status: N`, then the exact standard output of `check` on it. `tests/test_expected.py` checks them through a command line, `CPP_DEPS_CHECKER` if set, so that another implementation can be held to the same behavior. The tool's own tests use pytest. CI (`.github/workflows/ci.yml`) runs them, and runs the Action itself on a clean fixture and on one with a cycle.
 
+## C++ rewrite
+
+The Python package above is the prototype, tagged `v0.1.0`. The goal is a C++ implementation of the same rules that also runs inside clang-tidy and clangd, so that rules 3 and 4 report in the editor as the code is typed. Until the C++ command line passes every fixture's `expected.txt`, the Python stays in the tree as the reference and gets fixes only; then it is removed.
+
+### Why C++
+
+- An editor integration has to run inside clang-tidy or clangd, which load C++ plugins only. Exporting a policy file from the Python tool before each editor session was rejected: it is one more step, and it goes stale when a CMakeLists.txt changes.
+- Clang's preprocessor callbacks give each include directive's location and resolved file directly. That replaces pairing the `-dI` output with `-H`, and its fallbacks.
+
+### Targets
+
+Each feature is a CMake target, and the `target_link_libraries` graph is the dependency manifest; it must stay acyclic. The core has no LLVM dependency; only the targets under `clang/` link Clang.
+
+```
+core/
+  model/      # File API reply + trace -> Model
+  ownership/  # Model -> file owners and kinds, test and external targets
+  rules/      # Context -> violations; also the per-include check for the plugin
+cli/
+  report/     # text, GitHub annotations, job summary, Mermaid graph
+  main        # composition root of the command line
+clang/
+  includes/   # PPCallbacks -> include records, shared by the collector and the plugin
+  collect/    # libTooling run over compile_commands.json (used by cli)
+  tidy/       # clang-tidy module, loaded by clang-tidy --load and clangd --load
+testing/      # test support: configures fixtures through action/configure.sh
+```
+
+The one design decision each target hides:
+
+- `model`: how CMake exposes targets, edges and definition order (File API fields, trace format).
+- `ownership`: which target owns a file, whether it is public, private or `detail/`, and which targets are tests or external.
+- `rules`: the policy of each rule. `rules` owns the include record and the `Context` it checks, so the collectors depend on `rules`, not the other way round.
+- `report`: output formats and CI annotation syntax.
+- `clang/includes`: how includes are read from Clang (which callbacks, physical line from the hash location).
+- `clang/collect`: how translation units are run in-process (libTooling over the compilation database).
+- `clang/tidy`: how the check reaches the model from inside clang-tidy and clangd.
+
+Allowed edges, in topological order: `model`; `ownership` -> `model`; `rules` -> `ownership`, `model`; `report` -> `rules`, `model`; `clang/includes` -> `rules`; `clang/collect` -> `clang/includes`; `clang/tidy` -> `clang/includes`, `rules`, `ownership`, `model`; the command line -> everything but `clang/tidy`. `testing` -> `model` (it builds projects by hand), and only tests link it.
+
+### Plugin
+
+The clang-tidy module registers checks for rules 3 and 4 only; the graph rules (1, 2, 5, 6, 7) and rule 3a need the whole project and stay in the command line. For each translation unit the check takes the compile command's directory (`ClangTidyContext::getCurrentBuildDirectory()`), walks up to the CMake build directory holding `.cmake/api/v1/reply`, and loads the codemodel there, cached per build directory and reloaded when a newer index file appears. Editors that drive CMake through the File API already leave that reply in the build directory (unverified for CMake Tools in VS Code). The trace is not needed: rules 3 and 4 use only the codemodel, and header set verification targets are recognized by their backtrace node without a line, as recorded in Inputs, instead of by a missing trace definition.
+
+The plugin must be built with the same LLVM version as the tool that loads it, and nothing checks this at load time. clangd loads plugins from LLVM 24 ([llvm-project#226995](https://github.com/llvm/llvm-project/pull/226995)); the first target is LLVM 24 only, tested with the apt.llvm.org snapshot until 24 is released.
+
+### Build and dependencies
+
+- C++23, set with `target_compile_features`; CMake with FILE_SET public headers per target.
+- vcpkg for third-party libraries: glaze (JSON; needs C++23, built and tested by its authors with Clang 19+ and GCC 13+) and Catch2 for unit tests.
+- LLVM and Clang 24 from the system (`find_package(Clang CONFIG)`), not vcpkg; only the `clang/` targets link them.
+
+### Testing
+
+- Catch2 unit tests per target, rewritten from the Python unit tests on hand-built models.
+- The fixtures and their `expected.txt` files, run against the C++ command line through `CPP_DEPS_CHECKER`; parity means all of them pass.
+- The plugin: clang-tidy with `--load` on fixtures, comparing its diagnostics with the rule 3 and 4 lines of `expected.txt`.
+
+### Open questions
+
+- How the Action ships the C++ command line: per-platform release binaries, or a source build on the runner (which then needs LLVM 24 development packages).
+- Whether the command line keeps the Python's output byte for byte; `expected.txt` assumes it does.
+
 ## Unverified claims and open items
 
 These claims are approximate until checked:
