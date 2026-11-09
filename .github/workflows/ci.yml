@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: uv sync --locked
+      - run: uv run ruff format --check
+      - run: uv run ruff check
+      - run: uv run ty check
+      - run: uv run lint-imports
+      - run: uvx --from shellcheck-py shellcheck action/*.sh
+      - run: uvx --from actionlint-py actionlint
+      - name: Toolchain versions
+        run: |
+          cmake --version
+          clang++ --version
+          ninja --version
+      - run: uv run pytest
+
+  # Fails when actions.lock is out of sync with the workflows or a locked pin
+  # no longer verifies upstream.
+  lockfile:
+    runs-on: ubuntu-26.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - run: gh extension install github/gh-actions-lock --pin v0.4.1
+      - run: gh actions-lock --verify
+
+  # The Action on a fixture with a cycle, then on a clean one in the same job,
+  # which needs a work directory per invocation.
+  action:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - id: cycle
+        uses: $/
+        continue-on-error: true
+        with:
+          source-dir: tests/fixtures/cycles_static_pair
+          artifact-name: graph-cycles_static_pair
+      - name: Expect the cycle to fail the Action
+        if: steps.cycle.outcome != 'failure'
+        env:
+          OUTCOME: ${{ steps.cycle.outcome }}
+        run: |
+          echo "::error::the Action ended in $OUTCOME"
+          exit 1
+      - uses: $/
+        with:
+          source-dir: tests/fixtures/minimal
+          artifact-name: graph-minimal

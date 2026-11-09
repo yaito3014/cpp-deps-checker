@@ -1,0 +1,295 @@
+import json
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+type _Json = dict[str, Any]
+type _Site = tuple[Path, int, str]  # file, line, target name
+
+# Most trace lines are other commands; this cheap test skips their parsing.
+_DEFINING = re.compile(r"add_(?:library|executable)", re.IGNORECASE)
+
+
+class ReplyError(Exception):
+    """The File API reply cannot be used."""
+
+
+class MissingReplyError(ReplyError):
+    """No configure has answered a codemodel-v2 query in the build directory."""
+
+
+class StaleReplyError(ReplyError):
+    """The last configure failed, so the File API reply describes an older run."""
+
+
+class UnsupportedReplyError(ReplyError):
+    """The reply describes a build the checker does not handle yet."""
+
+
+@dataclass(frozen=True)
+class Location:
+    # As in the reply's backtraceGraph: relative to the top-level source
+    # directory when inside it, absolute otherwise.
+    file: Path
+    line: int | None
+
+    def __str__(self) -> str:
+        return str(self.file) if self.line is None else f"{self.file}:{self.line}"
+
+
+@dataclass(frozen=True)
+class Dependency:
+    target: str  # id of the target depended on
+    location: Location | None
+
+
+@dataclass(frozen=True)
+class Definition:
+    order: int  # position in configure-time execution order; compare only
+    location: Location
+
+
+@dataclass(frozen=True)
+class FileSet:
+    name: str
+    type: str  # HEADERS, CXX_MODULES, ...
+    visibility: str  # PUBLIC, PRIVATE, or INTERFACE
+    base_directories: tuple[Path, ...]
+    # Empty when the reply lists none, as for INTERFACE libraries that are not
+    # part of the build system (abstractTargets).
+    files: tuple[Path, ...]
+
+
+@dataclass(frozen=True)
+class Target:
+    """A target and the dependencies its own target_link_libraries declares.
+
+    Each dependency field mirrors the File API field of the same name, minus
+    non-target fragments and entries injected by another target's
+    INTERFACE_LINK_LIBRARIES_DIRECT (marked fromDependency).
+    """
+
+    id: str
+    name: str
+    type: str
+    imported: bool
+    # None if no add_library/add_executable call in the trace matches, such
+    # as for targets CMake creates internally.
+    definition: Definition | None
+    link_libraries: tuple[Dependency, ...]
+    compile_dependencies: tuple[Dependency, ...]
+    interface_link_libraries: tuple[Dependency, ...]
+    interface_compile_dependencies: tuple[Dependency, ...]
+    # Paths below are absolute and resolved.
+    source_dir: Path  # directory whose CMakeLists.txt defines the target
+    sources: tuple[Path, ...]  # sources in no file set
+    file_sets: tuple[FileSet, ...]
+    # For a target CMake creates to verify another target's interface header
+    # set (CMAKE_VERIFY_INTERFACE_HEADER_SETS): the id of that target.
+    verifies: str | None
+
+    @property
+    def declared_dependencies(self) -> tuple[Dependency, ...]:
+        """One dependency per target across all four fields, first one kept."""
+        first: dict[str, Dependency] = {}
+        for dependency in (
+            *self.link_libraries,
+            *self.compile_dependencies,
+            *self.interface_link_libraries,
+            *self.interface_compile_dependencies,
+        ):
+            first.setdefault(dependency.target, dependency)
+        return tuple(first.values())
+
+
+@dataclass(frozen=True)
+class Model:
+    targets: Mapping[str, Target]  # by id
+    # Top-level, absolute and resolved.
+    source_dir: Path
+    build_dir: Path
+
+    def locate(self, path: Path, line: int | None) -> Location:
+        """Location of an absolute path, in the form the File API uses."""
+        file = (
+            path.relative_to(self.source_dir)
+            if path.is_relative_to(self.source_dir)
+            else path
+        )
+        return Location(file, line)
+
+    def verified_target(self, source: Path) -> Target | None:
+        """The target whose header set verification compiles source, if any."""
+        for target in self.targets.values():
+            if target.verifies is not None and source in target.sources:
+                return self.targets[target.verifies]
+        return None
+
+
+def _read(path: Path) -> _Json:
+    return json.loads(path.read_text())
+
+
+def _current_index(reply_dir: Path) -> Path:
+    # cmake-file-api(7): the current index has the largest name once the
+    # index- or error- prefix is stripped. A failed configure writes an error
+    # index and leaves the previous index-*.json in place.
+    candidates = [*reply_dir.glob("index-*.json"), *reply_dir.glob("error-*.json")]
+    if not candidates:
+        raise MissingReplyError(
+            f"no File API reply in {reply_dir}; configure with a codemodel-v2 query"
+        )
+    current = max(candidates, key=lambda path: path.name.split("-", 1)[1])
+    if current.name.startswith("error-"):
+        raise StaleReplyError(f"the last configure failed ({current})")
+    return current
+
+
+def _location(graph: _Json, backtrace: int | None) -> Location | None:
+    if backtrace is None:
+        return None
+    node = graph["nodes"][backtrace]
+    # A target CMake creates itself (such as a header set verification
+    # target) has only a file-level node, without a line.
+    return Location(Path(graph["files"][node["file"]]), node.get("line"))
+
+
+def _dependencies(data: _Json, field: str) -> tuple[Dependency, ...]:
+    graph = data["backtraceGraph"]
+    return tuple(
+        Dependency(entry["id"], _location(graph, entry.get("backtrace")))
+        for entry in data.get(field, ())
+        if "id" in entry and "fromDependency" not in entry
+    )
+
+
+def _trace_order(trace: Path) -> dict[_Site, int]:
+    # The trace also holds try_compile projects, so a call counts only through
+    # the definition site the File API reports. Command names are
+    # case-insensitive and the trace keeps their spelling.
+    order: dict[_Site, int] = {}
+    with trace.open() as lines:
+        for position, line in enumerate(lines):
+            if _DEFINING.search(line) is None:
+                continue
+            entry = json.loads(line)
+            if entry.get("cmd", "").lower() in {"add_library", "add_executable"}:
+                site = (Path(entry["file"]).resolve(), entry["line"], entry["args"][0])
+                order.setdefault(site, position)
+    return order
+
+
+def _definition(
+    data: _Json, source_dir: Path, trace_order: Mapping[_Site, int]
+) -> Definition | None:
+    location = _location(data["backtraceGraph"], data.get("backtrace"))
+    if location is None:
+        return None
+    site = ((source_dir / location.file).resolve(), location.line, data["name"])
+    order = trace_order.get(site)
+    return None if order is None else Definition(order, location)
+
+
+def _verifies(data: _Json, definition: Definition | None) -> str | None:
+    # CMake names the target <target>_verify_interface_header_sets and links
+    # it to <target> only. No command in the project creates it, so it has no
+    # definition; a user target of the same name has one.
+    links = data.get("linkLibraries", ())
+    if (
+        definition is not None
+        or not data["name"].endswith("_verify_interface_header_sets")
+        or len(links) != 1
+        or "id" not in links[0]
+    ):
+        return None
+    return links[0]["id"]
+
+
+def _file_set_indexes(source: _Json) -> list[int]:
+    if "fileSetIndexes" in source:
+        return source["fileSetIndexes"]
+    # Before codemodel 2.11 a source names only its most recent file set.
+    return [source["fileSetIndex"]] if "fileSetIndex" in source else []
+
+
+def _files(
+    data: _Json, source_dir: Path
+) -> tuple[tuple[Path, ...], tuple[FileSet, ...]]:
+    def path(reported: str) -> Path:
+        return (source_dir / reported).resolve()
+
+    loose: list[Path] = []
+    members: list[list[Path]] = [[] for _ in data.get("fileSets", ())]
+    for source in data.get("sources", ()):
+        indexes = _file_set_indexes(source)
+        if not indexes:
+            loose.append(path(source["path"]))
+        for index in indexes:
+            members[index].append(path(source["path"]))
+    file_sets = tuple(
+        FileSet(
+            name=entry["name"],
+            type=entry["type"],
+            visibility=entry["visibility"],
+            base_directories=tuple(path(d) for d in entry["baseDirectories"]),
+            files=tuple(files),
+        )
+        for entry, files in zip(data.get("fileSets", ()), members, strict=True)
+    )
+    return tuple(loose), file_sets
+
+
+def _target(data: _Json, source_dir: Path, trace_order: Mapping[_Site, int]) -> Target:
+    sources, file_sets = _files(data, source_dir)
+    definition = _definition(data, source_dir, trace_order)
+    return Target(
+        id=data["id"],
+        name=data["name"],
+        type=data["type"],
+        imported=data.get("imported", False),
+        definition=definition,
+        link_libraries=_dependencies(data, "linkLibraries"),
+        compile_dependencies=_dependencies(data, "compileDependencies"),
+        interface_link_libraries=_dependencies(data, "interfaceLinkLibraries"),
+        interface_compile_dependencies=_dependencies(
+            data, "interfaceCompileDependencies"
+        ),
+        source_dir=(source_dir / data["paths"]["source"]).resolve(),
+        sources=sources,
+        file_sets=file_sets,
+        verifies=_verifies(data, definition),
+    )
+
+
+def load(build_dir: Path, trace: Path) -> Model:
+    """Load the File API reply in build_dir, ordered by the JSON trace."""
+    reply_dir = build_dir / ".cmake" / "api" / "v1" / "reply"
+    index = _read(_current_index(reply_dir))
+    if "codemodel-v2" not in index["reply"]:
+        raise MissingReplyError(
+            f"no codemodel-v2 reply in {reply_dir}; configure with a codemodel-v2 query"
+        )
+    codemodel = _read(reply_dir / index["reply"]["codemodel-v2"]["jsonFile"])
+    # Which configuration a multi-config generator should be checked in is an
+    # open decision in docs/design.md.
+    configurations = codemodel["configurations"]
+    if len(configurations) != 1:
+        raise UnsupportedReplyError(
+            f"the reply has {len(configurations)} configurations; multi-config "
+            "generators are not supported yet"
+        )
+    (configuration,) = configurations
+    entries = [*configuration["targets"], *configuration["abstractTargets"]]
+    source_dir = Path(codemodel["paths"]["source"]).resolve()
+    trace_order = _trace_order(trace)
+    targets = (
+        _target(_read(reply_dir / entry["jsonFile"]), source_dir, trace_order)
+        for entry in entries
+    )
+    return Model(
+        targets={target.id: target for target in targets},
+        source_dir=source_dir,
+        build_dir=Path(codemodel["paths"]["build"]).resolve(),
+    )

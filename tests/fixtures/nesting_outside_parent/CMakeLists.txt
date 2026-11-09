@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 4.2)
+project(nesting_outside_parent LANGUAGES CXX)
+add_subdirectory(parser)
+add_executable(app main.cpp)
+target_link_libraries(app PRIVATE parser lexer)

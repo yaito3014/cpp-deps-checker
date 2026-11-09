@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 4.2)
+project(action_base LANGUAGES NONE)
+if(NOT ACTION_ARGS_PASSED)
+  message(FATAL_ERROR "the base revision was configured without CMAKE_ARGS")
+endif()
+add_library(base INTERFACE)
+add_library(a INTERFACE)
+target_link_libraries(a INTERFACE base)

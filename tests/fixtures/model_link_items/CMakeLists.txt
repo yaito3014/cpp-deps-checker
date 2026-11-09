@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 4.2)
+project(model_link_items LANGUAGES CXX)
+add_library(injected INTERFACE)
+add_library(injector INTERFACE)
+set_property(TARGET injector PROPERTY INTERFACE_LINK_LIBRARIES_DIRECT injected)
+add_library(consumer STATIC consumer.cpp)
+target_link_libraries(consumer PRIVATE injector m)

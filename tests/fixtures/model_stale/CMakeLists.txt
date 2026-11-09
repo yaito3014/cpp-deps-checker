@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 4.2)
+project(model_stale LANGUAGES NONE)
+add_library(x INTERFACE)
+if(FAIL)
+  message(FATAL_ERROR "requested failure")
+endif()
