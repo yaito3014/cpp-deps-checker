@@ -9,26 +9,16 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  # uv only fetches the linters.
+  lint:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: astral-sh/setup-uv@v10.3.3
-      - run: uv sync --locked
-      - run: uv run ruff format --check
-      - run: uv run ruff check
-      - run: uv run ty check
-      - run: uv run lint-imports
       - run: uvx --from shellcheck-py shellcheck action/*.sh
       - run: uvx --from actionlint-py actionlint
-      - name: Toolchain versions
-        run: |
-          cmake --version
-          clang++ --version
-          ninja --version
-      - run: uv run pytest
 
-  # The C++ rewrite, built with vcpkg at the manifest's baseline and LLVM 24.
+  # Built with vcpkg at the manifest's baseline and LLVM 24.
   cpp:
     runs-on: ubuntu-26.04
     steps:

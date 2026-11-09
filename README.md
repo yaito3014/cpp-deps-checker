@@ -2,6 +2,17 @@
 
 Checks that a CMake project's `target_link_libraries` graph is acyclic and defined bottom-up, and that header includes follow it. See [docs/design.md](docs/design.md).
 
+## Building
+
+cpp-deps-checker is a C++23 command line built with CMake, its libraries from vcpkg (`VCPKG_ROOT` set) and LLVM 24, expected in `/usr/lib/llvm-24`. LLVM 24 is not released yet; apt.llvm.org's development snapshot has it.
+
+```sh
+cmake --preset default -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+cmake --build --preset default --target cpp_deps_checker_main
+```
+
+The executable is `build/default/cli/cpp-deps-checker`.
+
 ## Usage
 
 Configure the project with Clang, a File API query, a JSON trace, a compilation database, and interface header set verification, then check the build directory. Implemented so far: rule 1 (no cycles), rule 2 (definition order), rule 3 (direct layering), rule 3a (self-contained headers), rule 4 (entry point only), rule 5 (nesting is privacy), rule 6 (placement, a warning), and rule 7 (test isolation). Test targets are those defined under the top-level `tests/` or `test/` directory, and the composition roots are the production targets nothing else links; neither is configurable yet. External targets (imported, or defined outside the source tree or in a build directory inside it, as FetchContent dependencies are) own no files and are exempt from rules 2, 3a, 5 and 6.
@@ -18,7 +29,7 @@ cpp-deps-checker check build
 
 [action/configure.sh](action/configure.sh) `SOURCE_DIR BUILD_DIR [CMAKE_ARG...]` runs the same configure; the Action and the tests use it.
 
-Exit status: 0 when clean (or warnings only), 1 when any error is found, 2 when the inputs cannot be loaded, including a translation unit that fails to preprocess outside header set verification. `--trace FILE` and `--compile-commands FILE` point at inputs written elsewhere. `--annotations` prints GitHub Actions `::error` and `::warning` workflow commands instead of text lines, with paths relative to the current directory (the repository root in CI). Without a compilation database at its default path, the include rules are skipped with a warning.
+Exit status: 0 when clean (or warnings only), 1 when any error is found, 2 when the inputs cannot be loaded, including a translation unit that fails to preprocess outside header set verification, when an output file cannot be written, or on a usage error. `--trace FILE` and `--compile-commands FILE` point at inputs written elsewhere. `--annotations` prints GitHub Actions `::error` and `::warning` workflow commands instead of text lines, with paths relative to the current directory (the repository root in CI). Without a compilation database at its default path, the include rules are skipped with a warning.
 
 `cpp-deps-checker graph build` writes the declared edges between targets as a Mermaid flowchart in Markdown (`--output FILE` instead of standard output); it reads only the File API reply and the trace.
 
@@ -44,24 +55,14 @@ The runner must be a GitHub-hosted Ubuntu runner (it uses `sudo apt-get`) with C
 ## Development
 
 ```sh
-uv sync
-uv run ruff format --check
-uv run ruff check
-uv run ty check
-uv run lint-imports
-uv run pytest
+cmake --preset default
+cmake --build --preset default
+ctest --preset default
+clang-format --dry-run --Werror $(git ls-files '*.cpp' '*.hpp' ':!tests/fixtures')
 uvx --from shellcheck-py shellcheck action/*.sh
 uvx --from actionlint-py actionlint
 ```
 
-The C++ rewrite (see docs/design.md) builds with CMake, vcpkg (`VCPKG_ROOT` set) and LLVM 24 in `/usr/lib/llvm-24`:
-
-```sh
-cmake --preset default
-cmake --build --preset default
-ctest --preset default
-```
-
-Each fixture's `expected.txt` holds the exit status and standard output of `check` on it. The C++ tests check `build/default/cli/cpp-deps-checker` against them, and `CPP_DEPS_CHECKER=<command> uv run pytest tests/test_expected.py` checks any implementation.
+The design and the reasons behind each rule are in [docs/design.md](docs/design.md). Each fixture under `tests/fixtures` that configures with the default arguments has an `expected.txt`: its exit status and the exact standard output of `check` on it, which a Catch2 test checks.
 
 The workflows' action dependencies are locked in `.github/workflows/actions.lock`. After changing a `uses:` line in a workflow or in `action.yml`, regenerate it with `gh actions-lock` (the `github/gh-actions-lock` extension).
