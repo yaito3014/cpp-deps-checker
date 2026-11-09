@@ -131,6 +131,17 @@ struct load_error {
 // if one is given.
 [[nodiscard]] std::expected<project, load_error> load(std::filesystem::path const& build_dir, std::optional<std::filesystem::path> const& trace);
 
+// A File API reply: the build directory holding it, and the file name of its
+// current index (an error index after a failed configure), which every
+// configure changes.
+struct reply {
+  std::filesystem::path build_dir;
+  std::string index;
+};
+
+// The reply in directory or in its nearest ancestor that has one.
+[[nodiscard]] std::optional<reply> find_reply(std::filesystem::path const& directory);
+
 }  // namespace cpp_deps_checker::model
 
 #endif

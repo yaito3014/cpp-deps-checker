@@ -388,3 +388,37 @@ TEST_CASE("a location prints as file or file:line")
   CHECK(model::to_string(model::location{"a/CMakeLists.txt", 3}) == "a/CMakeLists.txt:3");
   CHECK(model::to_string(model::location{"/usr/include/x.h", std::nullopt}) == "/usr/include/x.h");
 }
+
+TEST_CASE("the reply is found from a directory below the build directory")
+{
+  temporary_directory const dir;
+  auto const build = testing::configure(testing::fixture("minimal"), dir.path() / "build");
+  fs::create_directories(build.dir / "sub" / "dir");
+
+  auto const reply = model::find_reply(build.dir / "sub" / "dir");
+
+  REQUIRE(reply);
+  CHECK(reply->build_dir == build.dir);
+  CHECK(reply->index.starts_with("index-"));
+  CHECK(fs::exists(build.dir / ".cmake/api/v1/reply" / reply->index));
+}
+
+TEST_CASE("the reply's current index is an error index after a failed configure")
+{
+  temporary_directory const dir;
+  auto const build = testing::configure(testing::fixture("minimal"), dir.path() / "build");
+  std::ofstream{build.dir / ".cmake/api/v1/reply" / "error-9999-12-31T23-59-59-9999.json"} << "{}";
+
+  auto const reply = model::find_reply(build.dir);
+
+  REQUIRE(reply);
+  CHECK(reply->index == "error-9999-12-31T23-59-59-9999.json");
+}
+
+TEST_CASE("no reply is found above a directory without one")
+{
+  temporary_directory const dir;
+  fs::create_directories(dir.path() / ".cmake/api/v1/reply");
+
+  CHECK_FALSE(model::find_reply(dir.path() / ".cmake"));
+}

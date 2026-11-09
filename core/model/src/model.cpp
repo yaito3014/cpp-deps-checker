@@ -143,12 +143,13 @@ std::expected<T, load_error> read_json(fs::path const& file)
   return rest == directory.end();
 }
 
-std::expected<fs::path, load_error> current_index(fs::path const& reply_dir)
+fs::path reply_dir_of(fs::path const& build_dir) { return build_dir / ".cmake" / "api" / "v1" / "reply"; }
+
+// The index or error index file with the largest name once the index- or
+// error- prefix is stripped, if any.
+std::optional<fs::path> latest_index(fs::path const& reply_dir)
 {
-  // cmake-file-api(7): the current index has the largest name once the index-
-  // or error- prefix is stripped. A failed configure writes an error index and
-  // leaves the previous index-*.json in place.
-  std::optional<std::pair<std::string, fs::path>> current;
+  std::optional<std::pair<std::string, fs::path>> latest;
   std::error_code ec;
   for (auto const& entry : fs::directory_iterator{reply_dir, ec}) {
     auto const name = entry.path().filename().string();
@@ -156,17 +157,29 @@ std::expected<fs::path, load_error> current_index(fs::path const& reply_dir)
       continue;
     }
     auto key = name.substr(name.find('-') + 1);
-    if (!current || key > current->first) {
-      current.emplace(std::move(key), entry.path());
+    if (!latest || key > latest->first) {
+      latest.emplace(std::move(key), entry.path());
     }
   }
+  if (!latest) {
+    return std::nullopt;
+  }
+  return std::move(latest->second);
+}
+
+std::expected<fs::path, load_error> current_index(fs::path const& reply_dir)
+{
+  // cmake-file-api(7): the current index has the largest name once the index-
+  // or error- prefix is stripped. A failed configure writes an error index and
+  // leaves the previous index-*.json in place.
+  auto current = latest_index(reply_dir);
   if (!current) {
     return std::unexpected{error(load_error_kind::missing, std::format("no File API reply in {}; configure with a codemodel-v2 query", reply_dir.string()))};
   }
-  if (current->second.filename().string().starts_with("error-")) {
-    return std::unexpected{error(load_error_kind::stale, std::format("the last configure failed ({})", current->second.string()))};
+  if (current->filename().string().starts_with("error-")) {
+    return std::unexpected{error(load_error_kind::stale, std::format("the last configure failed ({})", current->string()))};
   }
-  return current->second;
+  return *std::move(current);
 }
 
 std::optional<location> location_of(backtrace_graph_json const& graph, std::optional<std::size_t> backtrace)
@@ -355,7 +368,7 @@ target const* project::verified_target(std::filesystem::path const& source) cons
 
 std::expected<project, load_error> load(std::filesystem::path const& build_dir, std::optional<std::filesystem::path> const& trace)
 {
-  auto const reply_dir = build_dir / ".cmake" / "api" / "v1" / "reply";
+  auto const reply_dir = reply_dir_of(build_dir);
   auto const index_file = current_index(reply_dir);
   if (!index_file) {
     return std::unexpected{index_file.error()};
@@ -408,6 +421,18 @@ std::expected<project, load_error> load(std::filesystem::path const& build_dir, 
     }
   }
   return project{std::move(targets), source_dir, fs::weakly_canonical(codemodel->paths.build)};
+}
+
+std::optional<reply> find_reply(std::filesystem::path const& directory)
+{
+  for (auto dir = directory;; dir = dir.parent_path()) {
+    if (auto const index = latest_index(reply_dir_of(dir))) {
+      return reply{dir, index->filename().string()};
+    }
+    if (dir == dir.parent_path()) {
+      return std::nullopt;
+    }
+  }
 }
 
 }  // namespace cpp_deps_checker::model
