@@ -15,7 +15,7 @@ The executable is `build/default/cli/cpp-deps-checker`. The clang-tidy and clang
 
 ## Usage
 
-Configure the project with Clang, a File API query, a JSON trace, a compilation database, and interface header set verification, then check the build directory. Implemented so far: rule 1 (no cycles), rule 2 (definition order), rule 3 (direct layering), rule 3a (self-contained headers), rule 4 (entry point only), rule 5 (nesting is privacy), rule 6 (placement, a warning), and rule 7 (test isolation). Test targets are those defined under the top-level `tests/` or `test/` directory, and the composition roots are the production targets nothing else links; neither is configurable yet. External targets (imported, or defined outside the source tree or in a build directory inside it, as FetchContent dependencies are) own no files and are exempt from rules 2, 3a, 5 and 6.
+Configure the project with Clang, a File API query, a JSON trace, a compilation database, and interface header set verification, then check the build directory. Implemented so far: rule 1 (no cycles), rule 2 (definition order), rule 3 (direct layering), rule 3a (self-contained headers), rule 4 (entry point only), rule 5 (nesting is privacy), rule 6 (placement, a warning), and rule 7 (test isolation). Test targets are those defined in a `tests/` or `test/` directory at any depth, and the composition roots are the production targets nothing else links; neither is configurable yet. External targets (imported, or defined outside the source tree or in a build directory inside it, as FetchContent dependencies are) own no files and are exempt from rules 2, 3a, 5 and 6.
 
 ```sh
 mkdir -p build/.cmake/api/v1/query

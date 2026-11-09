@@ -297,10 +297,12 @@ TEST_CASE("tests by defining directory")
       target("nested", {.source_dir = root / "tests/unit"}),
       target("singular", {.source_dir = root / "test"}),
       target("deeper", {.source_dir = root / "src/tests"}),
+      target("deeper_singular", {.source_dir = root / "src/a/test/unit"}),
       target("lookalike", {.source_dir = root / "testsuite"}),
+      target("deeper_lookalike", {.source_dir = root / "src/testsuite"}),
       target("production", {.source_dir = root / "src"}),
   });
-  CHECK(find_tests(p) == std::set<std::string>{"top", "nested", "singular"});
+  CHECK(find_tests(p) == std::set<std::string>{"top", "nested", "singular", "deeper", "deeper_singular"});
 }
 
 TEST_CASE("tests by name pattern")
