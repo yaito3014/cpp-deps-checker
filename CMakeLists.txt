@@ -6,6 +6,7 @@ include(CTest)
 
 add_subdirectory(core)
 add_subdirectory(clang)
+add_subdirectory(cli)
 
 if(BUILD_TESTING)
     add_subdirectory(testing)
