@@ -1,12 +1,15 @@
+#include <cpp_deps_checker/config/config.hpp>
 #include <cpp_deps_checker/rules/rules.hpp>
 #include <cpp_deps_checker/testing/factories.hpp>
 #include <cpp_deps_checker/testing/fixture.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <cstddef>
 #include <format>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -537,4 +540,67 @@ TEST_CASE("external targets are neither tests nor production")
   CHECK(ctx.tests == std::set<std::string>{"a_test"});
   REQUIRE(ctx.production().size() == 1);
   CHECK(ctx.production().front()->id == "a");
+}
+
+namespace {
+
+std::vector<std::string> configured_messages(std::string_view rule, std::vector<model::target> targets, config::config const& settings)
+{
+  auto const ctx = rules::make_context(testing::project(std::move(targets)), settings);
+  if (!ctx) {
+    throw std::runtime_error{ctx.error()};
+  }
+  std::vector<std::string> result;
+  for (auto const& v : rules::check(*ctx)) {
+    if (v.rule == rule) {
+      result.push_back(v.message);
+    }
+  }
+  return result;
+}
+
+}  // namespace
+
+TEST_CASE("the configured composition roots replace the unconsumed targets")
+{
+  // gui links core too, but is not a composition root.
+  auto const targets = std::vector{placed("cli", "cli", {"core"}), placed("gui", "gui", {"core"}), placed("core", "core")};
+
+  CHECK(
+      configured_messages("placement", targets, {.composition_roots = std::vector<std::string>{"cli"}})
+      == std::vector<std::string>{"every path to core goes through cli; move core under cli/"}
+  );
+}
+
+TEST_CASE("a composition root must name a production target")
+{
+  auto const project = testing::project({placed("app", "app"), placed("app_test", "tests", {"app"})});
+  auto const name = GENERATE(std::string{"missing"}, std::string{"app_test"});
+  CAPTURE(name);
+
+  auto const ctx = rules::make_context(project, {.composition_roots = std::vector<std::string>{name}});
+
+  REQUIRE_FALSE(ctx);
+  CHECK_THAT(ctx.error(), Catch::Matchers::ContainsSubstring(std::format("composition_roots: no production target named {}", name)));
+}
+
+TEST_CASE("the configured test patterns replace the defaults")
+{
+  auto const project = testing::project({placed("a", "a"), placed("a_check", "a", {"a"}), placed("a_test", "tests", {"a"})});
+  config::config const settings{.tests = config::tests_config{.directories = std::vector<std::string>{}, .names = std::vector<std::string>{"*_check"}}};
+
+  auto const ctx = rules::make_context(project, settings);
+
+  REQUIRE(ctx);
+  CHECK(ctx->tests == std::set<std::string>{"a_check"});
+}
+
+TEST_CASE("an empty config keeps the defaults")
+{
+  auto const project = testing::project({placed("a", "a"), placed("a_test", "tests", {"a"})});
+
+  auto const ctx = rules::make_context(project, {});
+
+  REQUIRE(ctx);
+  CHECK(ctx->tests == std::set<std::string>{"a_test"});
 }

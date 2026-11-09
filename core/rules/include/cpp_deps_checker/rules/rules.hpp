@@ -1,10 +1,12 @@
 #ifndef CPP_DEPS_CHECKER_RULES_RULES_HPP
 #define CPP_DEPS_CHECKER_RULES_RULES_HPP
 
+#include <cpp_deps_checker/config/config.hpp>
 #include <cpp_deps_checker/model/model.hpp>
 #include <cpp_deps_checker/ownership/ownership.hpp>
 
 #include <compare>
+#include <expected>
 #include <filesystem>
 #include <optional>
 #include <set>
@@ -65,6 +67,8 @@ struct context {
   ownership::owners owners;
   std::set<std::string> tests;     // ids of test targets
   std::set<std::string> external;  // ids of targets whose code is not the project's
+  // Ids; unset, every production target that no production target links is one.
+  std::optional<std::vector<std::string>> composition_roots;
 
   // Targets the privacy and placement rules apply to, in model order: not
   // external, not tests, and not header set verification targets.
@@ -74,6 +78,11 @@ struct context {
 // A context with no includes or failures, classified with the default test
 // patterns.
 [[nodiscard]] context make_context(model::project project);
+
+// A context with no includes or failures, configured by settings, with the
+// defaults for what it leaves unset. A composition root that names no
+// production target is an error.
+[[nodiscard]] std::expected<context, std::string> make_context(model::project project, config::config const& settings);
 
 // Every rule's violations, rule by rule.
 [[nodiscard]] std::vector<violation> check(context const& ctx);
