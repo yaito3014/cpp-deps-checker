@@ -13,7 +13,7 @@ target_sources(
 target_link_libraries(
     cpp_deps_checker_tidy_cache
     PUBLIC cpp_deps_checker::rules
-    PRIVATE cpp_deps_checker::model
+    PRIVATE cpp_deps_checker::config cpp_deps_checker::model
 )
 
 if(BUILD_TESTING)

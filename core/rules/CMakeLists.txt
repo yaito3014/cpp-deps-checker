@@ -13,7 +13,10 @@ target_sources(
 )
 target_link_libraries(
     cpp_deps_checker_rules
-    PUBLIC cpp_deps_checker::model cpp_deps_checker::ownership
+    PUBLIC
+        cpp_deps_checker::config
+        cpp_deps_checker::model
+        cpp_deps_checker::ownership
 )
 
 if(BUILD_TESTING)

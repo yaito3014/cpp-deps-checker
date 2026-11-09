@@ -5,6 +5,7 @@
 #include <cpp_deps_checker/testing/fixture.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <fstream>
@@ -335,4 +336,65 @@ TEST_CASE("a C++20 project is checked before its first build")
   CAPTURE(r.err);
   CHECK(r.status == 1);
   CHECK(lines(r.out) == std::vector<std::string>{"a/a.cpp:2: error: a includes a/b/c/include/c/c.hpp of c without linking c directly [direct-layering]"});
+}
+
+namespace {
+
+// A copy of fixture with a config file, configured.
+testing::build configured_with(std::string_view fixture, std::string_view config_text, temporary_directory const& dir)
+{
+  auto const source = dir.path() / "source";
+  fs::copy(testing::fixture(fixture), source, fs::copy_options::recursive);
+  std::ofstream{source / ".cpp-deps-checker.yaml"} << config_text;
+  return testing::configure(source, dir.path() / "build");
+}
+
+}  // namespace
+
+TEST_CASE("check reads the config file in the source directory")
+{
+  temporary_directory const dir;
+  // b includes a detail header of a, which only a test target may.
+  auto const build = configured_with("entry_point_detail", "tests:\n  names: [b]\n", dir);
+
+  auto const r = run({"check", build.dir.string()});
+
+  CAPTURE(r.err);
+  CHECK(r.status == 0);
+  CHECK(r.out.empty());
+}
+
+TEST_CASE("graph reads the config file in the source directory")
+{
+  temporary_directory const dir;
+  auto const build = configured_with("entry_point_detail", "tests:\n  names: [b]\n", dir);
+
+  auto const r = run({"graph", build.dir.string()});
+
+  CHECK(r.status == 0);
+  CHECK_THAT(r.out, ContainsSubstring("[\"b\"]:::test"));
+}
+
+TEST_CASE("a config file that does not read is unusable input")
+{
+  temporary_directory const dir;
+  auto const build = configured_with("minimal", "composition_root: [app]\n", dir);
+  auto const command = GENERATE(std::string{"check"}, std::string{"graph"});
+  CAPTURE(command);
+
+  auto const r = run({command, build.dir.string()});
+
+  CHECK(r.status == 2);
+  CHECK_THAT(r.err, ContainsSubstring(".cpp-deps-checker.yaml"));
+}
+
+TEST_CASE("a composition root that names no production target is unusable input")
+{
+  temporary_directory const dir;
+  auto const build = configured_with("minimal", "composition_roots: [missing]\n", dir);
+
+  auto const r = run({"check", build.dir.string()});
+
+  CHECK(r.status == 2);
+  CHECK_THAT(r.err, ContainsSubstring(".cpp-deps-checker.yaml: composition_roots: no production target named missing"));
 }
