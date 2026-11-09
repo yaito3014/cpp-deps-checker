@@ -1,9 +1,9 @@
+import functools
 import json
-import os
 import re
 import shlex
 import subprocess
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,8 +12,14 @@ from typing import Any
 type _Edge = tuple[Path, Path]  # includer, included
 
 _TREE_LINE = re.compile(r"^(\.+) (.+)$")
-_DIRECTIVE = re.compile(r'^\s*#\s*(?:include|include_next|import)\s*[<"]([^>"]+)[>"]')
+# A line marker of `clang -E`: line, file, and flags (1 entering a file).
+_MARKER = re.compile(r'^# (\d+) "((?:[^"\\]|\\.)*)"((?: \d+)*)$')
+_ESCAPE = re.compile(r"\\(.)")
+# An include directive that `clang -E -dI` kept in its output.
+_DIRECTIVE = re.compile(r"^#(?:include|include_next|import) .* /\* clang -E -dI \*/$")
 _ERROR = re.compile(r"^(.+):(\d+):\d+: (?:fatal )?error: (.+)$")
+# #line, or its GNU form `# 12 "file"`, in source text.
+_RENUMBERING = re.compile(r"^[ \t]*#[ \t]*(?:line\b|[0-9])", re.MULTILINE)
 
 
 class IncludeError(Exception):
@@ -51,15 +57,16 @@ class Collection:
     failures: tuple[Failure, ...]
 
 
-def parse_tree(output: str, source: Path, directory: Path) -> set[_Edge]:
-    """Edges of the include tree that `clang -H` printed for source.
+def parse_tree(output: str, source: Path, directory: Path) -> list[_Edge]:
+    """Edges of the include tree that `clang -H` printed for source, one per
+    printed header, in order.
 
     Each line is one dot per nesting level, a space, and the path as the
     compiler opened it, relative to the compile directory if not absolute.
     Lines without leading dots (such as the include guard hints) are skipped.
     """
     stack = [(directory / source).resolve()]
-    edges: set[_Edge] = set()
+    edges: list[_Edge] = []
     for line in output.splitlines():
         match = _TREE_LINE.match(line)
         if match is None:
@@ -67,24 +74,133 @@ def parse_tree(output: str, source: Path, directory: Path) -> set[_Edge]:
         depth = len(match[1])
         header = (directory / match[2]).resolve()
         del stack[depth:]
-        edges.add((stack[-1], header))
+        edges.append((stack[-1], header))
         stack.append(header)
     return edges
 
 
-def directive_line(text: str, included: Path) -> int | None:
-    """Line of the #include in text whose spelled path best matches included."""
-    best: tuple[int, int] | None = None  # spelled length, line
-    for number, line in enumerate(text.splitlines(), start=1):
-        match = _DIRECTIVE.match(line)
-        if match is None:
+@dataclass(frozen=True)
+class Directive:
+    """An include directive the preprocessor ran."""
+
+    includer: Path  # absolute and resolved
+    line: int
+    # The header the preprocessor then entered; None if it skipped the header
+    # (include guard, #pragma once) or did not find it.
+    entered: Path | None
+
+
+@dataclass
+class _Pending:
+    includer: Path | None  # None in the predefines or on the command line
+    line: int
+    forced: bool  # inside a header included with -include
+    entered: Path | None = None
+
+
+def parse_directives(
+    output: str, directory: Path
+) -> tuple[list[Directive], list[Include]]:
+    """The include directives in the output of `clang -E -dI`, in order, and
+    the include edges of the headers included with -include.
+
+    Line markers give the file and line of the next output line, and each
+    other line is the next line of that file; their flags tell when a file
+    is entered (1) and when it is returned to (2). -H prints neither a
+    -include header nor what it includes, so the directives under one are
+    not returned but give the edges to the headers they entered, the header
+    itself counting as included by the main file without a line. A header
+    such a directive skipped (include guard, #pragma once) is not named, so
+    it gives no edge.
+    """
+    found: list[_Pending] = []
+    stack: list[str] = []  # files entered, the main file first
+    main: Path | None = None
+    file: Path | None = None
+    line = 0
+    # The directive whose header may be entered next, with only line markers
+    # in between.
+    pending: _Pending | None = None
+    for text in output.splitlines():
+        marker = _MARKER.match(text)
+        if marker is not None:
+            name = _ESCAPE.sub(r"\1", marker[2])
+            path = None if name.startswith("<") else (directory / name).resolve()
+            key = name if path is None else str(path)
+            flags = marker[3].split()
+            if not stack:
+                stack, main = [key], path
+            elif "1" in flags:
+                if pending is not None:
+                    pending.entered = path
+                pending = None
+                stack.append(key)
+            elif "2" in flags:
+                while len(stack) > 1 and stack[-1] != key:
+                    stack.pop()
+            file, line = path, int(marker[1])
             continue
-        spelled = Path(match[1]).parts
-        if included.parts[-len(spelled) :] == spelled and (
-            best is None or len(spelled) > best[0]
-        ):
-            best = (len(spelled), number)
-    return None if best is None else best[1]
+        pending = None
+        if _DIRECTIVE.match(text):
+            forced = any(entry.startswith("<") for entry in stack[1:])
+            pending = _Pending(file, line, forced)
+            found.append(pending)
+        line += 1
+    directives = [
+        Directive(d.includer, d.line, d.entered)
+        for d in found
+        if not d.forced and d.includer is not None
+    ]
+    forced_includes = [
+        Include(d.includer, d.entered, d.line)
+        if d.includer is not None
+        else Include(main, d.entered, None)
+        for d in found
+        if d.forced and d.entered is not None and main is not None
+    ]
+    return directives, forced_includes
+
+
+def directive_lines(
+    edges: Sequence[_Edge],
+    directives: Sequence[Directive],
+    error: Diagnostic | None,
+    renumbers: Callable[[Path], bool] = lambda _: False,
+) -> list[int | None]:
+    """The line of each edge from parse_tree, paired in order with the
+    directive that made it.
+
+    The directive at the location of the translation unit's first error is
+    left out, since -H prints nothing for a header it did not find. An edge
+    whose includer renumbers its lines (#line) gets no line, since line
+    markers carry the renumbered lines, and is paired without comparing
+    includers, since #line may also rename the file. If the two sequences
+    still disagree on a count, an includer, or an entered header, no edge
+    gets a line rather than a wrong one.
+    """
+    if error is not None:
+        directives = [
+            d
+            for d in directives
+            if d.entered is not None or (d.includer, d.line) != (error.file, error.line)
+        ]
+    if len(directives) != len(edges) or any(
+        (d.includer != includer and not renumbers(includer))
+        or d.entered not in {None, included}
+        for d, (includer, included) in zip(directives, edges, strict=True)
+    ):
+        return [None] * len(edges)
+    return [
+        None if renumbers(includer) else d.line
+        for d, (includer, _) in zip(directives, edges, strict=True)
+    ]
+
+
+@functools.cache
+def _renumbers(path: Path) -> bool:
+    """Whether the file may renumber its lines, even in a comment or a branch
+    that is not compiled."""
+    return _RENUMBERING.search(path.read_text(errors="replace")) is not None
 
 
 def _preprocess_arguments(entry: dict[str, Any]) -> list[str]:
@@ -99,8 +215,9 @@ def _preprocess_arguments(entry: dict[str, Any]) -> list[str]:
         elif argument != "-c":
             kept.append(argument)
     # -fshow-skipped-includes also prints headers skipped by their include
-    # guard, which plain -H omits; that edge is needed all the same.
-    return [*kept, "-E", "-H", "-fshow-skipped-includes", "-o", os.devnull]
+    # guard, which plain -H omits; that edge is needed all the same. -dI keeps
+    # the directives in the output, which tells where each one is.
+    return [*kept, "-E", "-dI", "-H", "-fshow-skipped-includes"]
 
 
 def _first_error(output: str, directory: Path) -> Diagnostic | None:
@@ -112,7 +229,7 @@ def _first_error(output: str, directory: Path) -> Diagnostic | None:
     return None
 
 
-def _preprocess(entry: dict[str, Any]) -> tuple[set[_Edge], Failure | None]:
+def _preprocess(entry: dict[str, Any]) -> tuple[list[Include], Failure | None]:
     directory = Path(entry["directory"])
     source = Path(entry["file"])
     result = subprocess.run(
@@ -124,26 +241,32 @@ def _preprocess(entry: dict[str, Any]) -> tuple[set[_Edge], Failure | None]:
         check=False,
     )
     edges = parse_tree(result.stderr, source, directory)
+    error = _first_error(result.stderr, directory)
+    directives, forced_includes = parse_directives(result.stdout, directory)
+    lines = directive_lines(edges, directives, error, _renumbers)
+    includes = [
+        Include(includer, included, line)
+        for (includer, included), line in zip(edges, lines, strict=True)
+    ] + [
+        Include(i.includer, i.included, None) if _renumbers(i.includer) else i
+        for i in forced_includes
+    ]
     if result.returncode == 0:
-        return edges, None
+        return includes, None
     failure = Failure(
-        source=(directory / source).resolve(),
-        error=_first_error(result.stderr, directory),
-        output=result.stderr,
+        source=(directory / source).resolve(), error=error, output=result.stderr
     )
-    return edges, failure
+    return includes, failure
 
 
-def _lines(edges: Iterable[_Edge]) -> list[Include]:
-    texts: dict[Path, str] = {}
-    includes: list[Include] = []
-    for includer, included in edges:
-        if includer not in texts:
-            texts[includer] = includer.read_text(errors="replace")
-        includes.append(
-            Include(includer, included, directive_line(texts[includer], included))
-        )
-    return includes
+def _deduplicated(includes: Iterable[Include]) -> set[Include]:
+    """Each include once, and an edge without a line only if no translation
+    unit found its line."""
+    unique = set(includes)
+    found = {(i.includer, i.included) for i in unique if i.line is not None}
+    return {
+        i for i in unique if i.line is not None or (i.includer, i.included) not in found
+    }
 
 
 def collect(
@@ -161,8 +284,8 @@ def collect(
     ]
     with ThreadPoolExecutor() as pool:
         results = list(pool.map(_preprocess, entries))
-    edges: set[_Edge] = set().union(*(edges for edges, _ in results))
+    includes = _deduplicated(i for includes, _ in results for i in includes)
     return Collection(
-        includes=tuple(sorted(_lines(edge for edge in edges if keep(edge[0])))),
+        includes=tuple(sorted(i for i in includes if keep(i.includer))),
         failures=tuple(failure for _, failure in results if failure is not None),
     )
