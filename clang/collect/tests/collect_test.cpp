@@ -249,3 +249,15 @@ TEST_CASE("the first error is an error, not an earlier warning")
   REQUIRE(collection.failures.size() == 1);
   CHECK(collection.failures.front().error == rules::diagnostic{root / "m.cpp", 2, "'missing.hpp' file not found"});
 }
+
+TEST_CASE("an include option header also included by a directive is one include, with its line")
+{
+  temporary_directory const dir;
+  write(dir.path() / "inc/a.hpp", guarded("a.hpp"));
+  write(dir.path() / "m.cpp", "#include \"a.hpp\"\n");
+  auto const root = fs::canonical(dir.path());
+
+  auto const collection = collected(commands(dir.path(), {"m.cpp"}, {"-include", "a.hpp"}));
+
+  CHECK(collection.includes == std::vector<include>{{root / "m.cpp", root / "inc/a.hpp", 1}});
+}

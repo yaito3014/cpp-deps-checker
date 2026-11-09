@@ -121,7 +121,21 @@ std::expected<collection, std::string> collect(std::filesystem::path const& comp
       failures.push_back({source, consumer.first_error(), consumer.output()});
     }
   }
-  return collection{{found.begin(), found.end()}, std::move(failures)};
+  // A -include header that a directive also includes gives the same edge with
+  // and without a line; the line is kept.
+  std::set<std::pair<fs::path, fs::path>> located;
+  for (auto const& directive : found) {
+    if (directive.line) {
+      located.emplace(directive.includer, directive.included);
+    }
+  }
+  std::vector<rules::include> includes;
+  for (auto const& directive : found) {
+    if (directive.line || !located.contains({directive.includer, directive.included})) {
+      includes.push_back(directive);
+    }
+  }
+  return collection{std::move(includes), std::move(failures)};
 }
 
 }  // namespace cpp_deps_checker::collect

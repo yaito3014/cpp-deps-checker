@@ -217,7 +217,7 @@ The one design decision each target hides:
 - `rules`: the policy of each rule. `rules` owns the include record and the `Context` it checks, so the collectors depend on `rules`, not the other way round.
 - `report`: output formats and CI annotation syntax.
 - `clang/includes`: how includes are read from Clang (which callbacks, physical line from the hash location).
-- `clang/collect`: how translation units are run in-process (libTooling over the compilation database). An include's line is the directive's physical line, which `#line` does not change, so unlike the Python's `-dI` pairing a file using `#line` still gets lines; a header given with `-include` counts as included by the main file, without a line, as in the Python.
+- `clang/collect`: how translation units are run in-process (libTooling over the compilation database). An include's line is the directive's physical line, which `#line` does not change, so unlike the Python's `-dI` pairing a file using `#line` still gets lines; a header given with `-include` counts as included by the main file, without a line, unless a directive of the main file also includes it, as in the Python.
 - `clang/tidy`: how the check reaches the model from inside clang-tidy and clangd.
 
 Allowed edges, in topological order: `model`; `ownership` -> `model`; `rules` -> `ownership`, `model`; `report` -> `rules`, `model`; `clang/includes` -> `rules`; `clang/collect` -> `clang/includes`; `clang/tidy` -> `clang/includes`, `rules`, `ownership`, `model`; the command line -> everything but `clang/tidy`. `testing` -> `model` (it builds projects by hand), and only tests link it.

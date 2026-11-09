@@ -14,8 +14,8 @@ namespace cpp_deps_checker::collect {
 using predicate = std::function<bool(std::filesystem::path const&)>;
 
 struct collection {
-  // Sorted, each once. A failed translation unit still contributes the
-  // includes it reached.
+  // Sorted, each once, and an edge without a line only if it has none with
+  // one. A failed translation unit still contributes the includes it reached.
   std::vector<rules::include> includes;
   std::vector<rules::failure> failures;
 };
