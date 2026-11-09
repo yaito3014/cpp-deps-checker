@@ -74,9 +74,13 @@ jobs:
       - run: gh actions-lock --verify
 
   # The Action on a fixture with a cycle, then on a clean one in the same job,
-  # which needs a work directory per invocation.
+  # which needs a work directory per invocation, on x64 and ARM64.
   action:
-    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-26.04, ubuntu-26.04-arm]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7.0.1
       - id: cycle

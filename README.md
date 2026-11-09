@@ -39,7 +39,7 @@ jobs:
           cmake-args: -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
 ```
 
-The runner needs CMake 4.2 or later, Clang, and whatever generator `cmake-args` names; the Action installs only uv, Python if the runner lacks 3.14, and the tool. It annotates the violations, writes a job summary with every violation and the edges new since `base-ref` (default: the pull request's base branch, configured a second time in a git worktree, without submodules), and uploads the graph as the artifact `artifact-name` (default `cpp-deps-graph`). `cmake-args` is split on whitespace, without quoting.
+The runner must be a GitHub-hosted Ubuntu runner (it uses `sudo apt-get`) with CMake 4.2 or later, Clang, and whatever generator `cmake-args` names. The Action installs LLVM 24 from apt.llvm.org's development snapshot, builds the tool from its own checkout, and caches the build per tool version and LLVM snapshot; the snapshot changes often, so expect a build of a few minutes when it has. It annotates the violations, writes a job summary with every violation and the edges new since `base-ref` (default: the pull request's base branch, configured a second time in a git worktree, without submodules), and uploads the graph as the artifact `artifact-name` (default `cpp-deps-graph`). `cmake-args` is split on whitespace, without quoting.
 
 ## Development
 

@@ -22,12 +22,46 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: astral-sh/setup-uv@v10.3.3
-    - name: Install cpp-deps-checker
+    # The checker is built from the Action's own checkout against LLVM 24,
+    # whose development snapshot moves, so a cached build is reused only for
+    # the same sources and the same snapshot.
+    - name: Find the LLVM 24 snapshot and the checker's sources
+      id: versions
       shell: sh
       run: |
-        uv tool install --quiet "$GITHUB_ACTION_PATH"
-        uv tool dir --bin >>"$GITHUB_PATH"
+        echo "llvm=$("$GITHUB_ACTION_PATH/action/llvm.sh" version)" >>"$GITHUB_OUTPUT"
+        echo "sources=$("$GITHUB_ACTION_PATH/action/build.sh" hash "$GITHUB_ACTION_PATH")" >>"$GITHUB_OUTPUT"
+    - name: Restore cpp-deps-checker
+      id: restore
+      uses: actions/cache/restore@v6.1.0
+      with:
+        path: ${{ runner.temp }}/cpp-deps-checker-bin
+        key: cpp-deps-checker-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.llvm }}-${{ steps.versions.outputs.sources }}
+    - name: Install LLVM 24
+      shell: sh
+      env:
+        BUILD: ${{ steps.restore.outputs.cache-hit != 'true' }}
+      run: |
+        set -- libllvm24 libclang-cpp24 libclang-common-24-dev
+        if [ "$BUILD" = true ]; then
+          set -- "$@" llvm-24-dev libclang-24-dev libclang-cpp24-dev
+        fi
+        "$GITHUB_ACTION_PATH/action/llvm.sh" install "$@"
+    - name: Build cpp-deps-checker
+      if: steps.restore.outputs.cache-hit != 'true'
+      shell: sh
+      run: |
+        "$GITHUB_ACTION_PATH/action/build.sh" build "$GITHUB_ACTION_PATH" \
+          "$RUNNER_TEMP/cpp-deps-checker-bin" "$(mktemp -d "$RUNNER_TEMP/cpp-deps-checker-build.XXXXXX")"
+    - name: Save cpp-deps-checker
+      if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6.1.0
+      with:
+        path: ${{ runner.temp }}/cpp-deps-checker-bin
+        key: ${{ steps.restore.outputs.cache-primary-key }}
+    - name: Put cpp-deps-checker on PATH
+      shell: sh
+      run: echo "$RUNNER_TEMP/cpp-deps-checker-bin" >>"$GITHUB_PATH"
     - name: Check
       id: check
       shell: sh
