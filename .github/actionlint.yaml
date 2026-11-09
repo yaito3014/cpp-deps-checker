@@ -3,6 +3,7 @@ self-hosted-runner:
   # https://github.com/rhysd/actionlint/issues/682
   labels:
     - ubuntu-26.04
+    - ubuntu-26.04-arm
 paths:
   .github/workflows/ci.yml:
     ignore:
