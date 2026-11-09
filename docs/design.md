@@ -14,7 +14,7 @@ Eight rules fail the check, one only warns, and two produce output. Every violat
 
 | # | Rule | What is checked | Level |
 | --- | --- | --- | --- |
-| 1 | No cycles | SCC search over declared edges (defined below) | error |
+| 1 | No cycles | SCC search over declared edges (defined below). One violation per strongly connected component, with the shortest cycle through its first member in the message | error |
 | 2 | Definition order | For every edge T1 -> T2, the `add_library`/`add_executable` of T2 runs before that of T1, by trace order. External targets (defined below) are exempt, on either side of the edge | error |
 | 3 | Direct layering | A file owned by T1 (source or header) that includes a header owned by T2 != T1 requires T2 in `compileDependencies(T1)` if the includer is a source or private header, and in `interfaceCompileDependencies(T1)` if it is a public header. INTERFACE libraries have only public headers. Includes of external targets' headers will need a declared link too, once their owner is decided (see Open decisions) | error |
 | 3a | Self-contained headers | Every header in a target's interface header sets preprocesses on its own with that target's usage requirements: its `CMAKE_VERIFY_INTERFACE_HEADER_SETS` translation unit passes the Clang `-E` pass. Reported at the compiler's first error. Only preprocessing is checked; building the verification targets catches the rest. External targets are exempt | error |
@@ -84,6 +84,8 @@ Re-checked on CMake 4.4.5 with the same fixture (`tests/fixtures/model_basics`):
 **No languages, no compilation database.** A project with `project(... LANGUAGES NONE)` gets no `compile_commands.json` even with `CMAKE_EXPORT_COMPILE_COMMANDS=ON`.
 
 **Header set verification targets.** With `CMAKE_VERIFY_INTERFACE_HEADER_SETS=ON`, CMake adds an `OBJECT_LIBRARY` named `<t>_verify_interface_header_sets` for every target `t` (seen for STATIC and INTERFACE libraries, with or without header sets; executables not checked), plus the UTILITY targets `all_verify_header_sets` and `all_verify_interface_header_sets`. The verification target's only `linkLibraries` entry is `t`, its `paths.source` is `t`'s, its sources are one generated `<header>.cxx` per interface header set member in the build directory (containing `#include <spelled/header.hpp>` on line 2), and its backtrace node has a file but no line, so it has no definition site. The model recognizes it by name, single link, and missing definition. When `t` links a dependency PRIVATE, the verification TU lacks the dependency's include directory, so a public header that includes it fails there as well as violating rule 3. `CMAKE_VERIFY_PRIVATE_HEADER_SETS` (CMake 4.3) exists but is not used.
+
+**Targets never link themselves.** CMake rejects a non-INTERFACE target that links itself and drops an INTERFACE library's self-link from the reply, so every cycle spans at least two targets.
 
 **`-fshow-skipped-includes` prints guarded re-includes.** Fixture: `m.cpp` includes `a.hpp` then `b.hpp`, and `b.hpp` includes the already guarded `a.hpp`. Plain `-H` prints `. ./a.hpp` and `. ./b.hpp` only; with the flag it also prints `.. ./a.hpp` under `b.hpp`, so the `b.hpp -> a.hpp` edge is kept.
 
@@ -174,27 +176,17 @@ The declared-edges definition is computed by the model (`Target.declared_depende
 
 Keeping `includes` free of target knowledge means replacing `-H` with another collector does not touch ownership, and changing ownership (for example for imported targets) does not touch collection.
 
-## Implementation order
+## Testing
 
-Build test-first: each step starts with a fixture CMake project under `tests/fixtures/<case>/` that contains exactly one violation, and a failing test asserting the expected violation and its `file:line`. The exception is a cycle: every cycle has an edge to a later-defined target, so a rule 1 fixture also violates rule 2. Graph logic that needs no CMake (larger components, acyclic graphs) is unit-tested on a hand-built `Model`.
-
-1. **Fixture harness.** Configure a fixture into a temporary build directory with the File API query and trace enabled, and return the reply paths.
-2. **Model loader.** First test reproduces the verified fixture in Inputs: the four dependency fields and `abstractTargets` behave as recorded there, including INTERFACE library `b`'s edge to `d`. Then: an `error-*.json` index newer than the `index-*.json` makes the loader fail.
-3. **Rule 2, definition order.** Fixture: a dependency defined in a later `add_subdirectory` than its consumer. Expect one error at the consumer's link. Also: an imported dependency defined after its consumer (clean), and model fixtures for trace matching (a try_compile project defining a same-named target, an upper-case `ADD_LIBRARY`, a wrapper function).
-4. **Rule 1, cycles.** Fixture: two static libraries linking each other; expect the cycle and the rule 2 error at the same link. One violation per strongly connected component, with the shortest cycle through its first member in the message. Self-loops need no handling: CMake rejects a non-INTERFACE target linking itself and drops an INTERFACE library's self-link from the reply (verified on CMake 4.4.5).
-5. **Include collection, header classification, and rule 3.** Fixtures: a header including a transitive-only dependency (error, which also needs `-fshow-skipped-includes`: the second include of the guarded header is skipped); a public header including a PRIVATE-linked dependency (error); the same with PUBLIC (clean). Classification and `-H` parsing are unit-tested on hand-built inputs. Without `compile_commands.json` at its default path, `check` warns and skips the include rules; an explicit `--compile-commands` that is missing is an error. Imported-target fixtures wait for the ownership decision below. Rule 3a: a public header that includes a header found only through a PRIVATE include directory (error); a TU outside header set verification that fails to preprocess (exit status 2).
-6. **Test classification, rule 4, and rule 7.** Fixtures: a non-test target including another target's `detail/` header (error); a test doing the same (clean); a test including a private header, reached through its own include directory (error); a production target linking a test helper, next to a test linking the same helper (one error). Detail headers and test identification are unit-tested on hand-built models.
-7. **Rules 5 and 6.** Fixtures: a nested target consumed from outside its parent (error); a target placed above its consumers' common ancestor (warning, exit code 0). Dominators (diamonds, cycles, several roots, same-directory placement) and the exemptions are unit-tested on hand-built models. Rule 6 applies to every fixture, so the earlier fixtures nest each single-consumer dependency under its consumer to keep exactly one violation.
-8. **Report and Action.** Annotations, job summary with new edges against the base branch, graph output. Formats are unit-tested on hand-built inputs, including a Mermaid round trip; the CLI options on fixtures; `action/run.sh` end to end on a local git origin whose base branch lacks an edge (shallow and full clones), whose base does not configure, and with no base ref. `action.yml` itself is checked only with actionlint, through a workflow that uses it locally; it has not run on GitHub.
-
-The tool's own tests use pytest.
+Tests come first. Each rule has fixture CMake projects under `tests/fixtures/<case>/` that contain exactly one violation, with a test asserting the violation and its `file:line`. The exception is a cycle: every cycle has an edge to a later-defined target, so a rule 1 fixture also violates rule 2. Rule 6 applies to every fixture, so fixtures nest each single-consumer dependency under its consumer to keep exactly one violation. Graph logic that needs no CMake (larger components, acyclic graphs, dominators) is unit-tested on a hand-built `Model`. The tool's own tests use pytest.
 
 ## Unverified claims and open items
 
-These claims are approximate until checked, most of them in step 2 or step 5:
+These claims are approximate until checked:
 
 - `CMAKE_OPTIMIZE_DEPENDENCIES=ON` is known to strip `dependencies`; whether it also affects the four dependency fields is unknown.
 - Generated headers may require a build before the `-H` pass can preprocess every TU.
+- `action.yml` has not run on GitHub; it is checked only with actionlint, through a workflow that uses it locally.
 
 Open decisions:
 
