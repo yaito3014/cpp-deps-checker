@@ -42,10 +42,6 @@ jobs:
           git -C "$root" checkout --quiet FETCH_HEAD
           "$root/bootstrap-vcpkg.sh" -disableMetrics
           echo "VCPKG_ROOT=$root" >>"$GITHUB_ENV"
-      - uses: actions/cache@v6.1.0
-        with:
-          path: ~/.cache/vcpkg/archives
-          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
       - run: cmake --preset default
       - run: cmake --build --preset default
       - run: ctest --preset default
