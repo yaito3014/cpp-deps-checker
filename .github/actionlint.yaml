@@ -3,3 +3,9 @@ self-hosted-runner:
   # https://github.com/rhysd/actionlint/issues/682
   labels:
     - ubuntu-26.04
+paths:
+  .github/workflows/ci.yml:
+    ignore:
+      # The lockfile needs the same-repo action as $/, which actionlint 1.7.12
+      # does not know: https://gh.io/actions-lockfile
+      - 'specifying action "\$/" in invalid format'

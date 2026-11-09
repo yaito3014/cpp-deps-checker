@@ -12,7 +12,7 @@ jobs:
   test:
     runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: astral-sh/setup-uv@v10.3.3
       - run: uv sync --locked
       - run: uv run ruff format --check
@@ -40,9 +40,9 @@ jobs:
             expected: failure
     runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - id: check
-        uses: ./
+        uses: $/
         continue-on-error: true
         with:
           source-dir: tests/fixtures/${{ matrix.fixture }}
