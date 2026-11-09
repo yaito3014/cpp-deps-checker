@@ -1,0 +1,2 @@
+# exit status: 1
+include/a/a.hpp:1: error: header of a does not preprocess on its own: 'config.hpp' file not found [self-contained]

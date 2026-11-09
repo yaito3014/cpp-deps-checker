@@ -1,0 +1,2 @@
+# exit status: 1
+CMakeLists.txt:5: error: a links late, which is defined later at late/CMakeLists.txt:1; define late before a [definition-order]

@@ -1,0 +1,2 @@
+# exit status: 1
+CMakeLists.txt:5: error: app links lexer, which is private to parser/; hoist lexer: a private detail is becoming shared API [nesting]

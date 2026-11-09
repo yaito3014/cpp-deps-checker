@@ -1,0 +1,2 @@
+# exit status: 1
+tests/a_test.cpp:1: error: a_test includes a/src/impl.hpp, a private header of a; only a may include it [entry-point]
