@@ -114,18 +114,23 @@ def _relative(path: Path, directories: Iterable[Path]) -> Path | None:
     return path.relative_to(max(containing, key=lambda d: len(d.parts)))
 
 
+def _nested_build_dir(model: Model) -> Path | None:
+    """The build directory if it is strictly inside the source directory."""
+    source, build = model.source_dir, model.build_dir
+    return build if build != source and build.is_relative_to(source) else None
+
+
 def find_external(model: Model) -> frozenset[str]:
     """Ids of the targets whose code is not the project's: imported targets,
     and targets defined outside the top-level source directory or inside a
     build directory nested in it, where FetchContent puts what it fetches."""
-    source, build = model.source_dir, model.build_dir
-    nested_build = build != source and build.is_relative_to(source)
+    build = _nested_build_dir(model)
 
     def external(target: Target) -> bool:
         return (
             target.imported
-            or not target.source_dir.is_relative_to(source)
-            or (nested_build and target.source_dir.is_relative_to(build))
+            or not target.source_dir.is_relative_to(model.source_dir)
+            or (build is not None and target.source_dir.is_relative_to(build))
         )
 
     return frozenset(t.id for t in model.targets.values() if external(t))
@@ -187,6 +192,12 @@ def classify(model: Model) -> Owners:
         (t.source_dir, _Claim(t.id, _public(t, None))) for t in owning
     ]
     source_directories += [(t.source_dir, None) for t in shadowing]
+    # Generated files, such as header set verification sources, belong only
+    # to a target that lists them, not to the target whose source directory
+    # holds the build directory.
+    build = _nested_build_dir(model)
+    if build is not None:
+        source_directories.append((build, None))
     return Owners(
         listed=_index(listed, _merge_owners),
         base_directories=_index(base_directories, _merge_claims),

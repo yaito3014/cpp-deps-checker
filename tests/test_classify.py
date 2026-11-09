@@ -96,6 +96,20 @@ def test_base_directory_of_a_public_and_a_private_file_set_is_public() -> None:
     assert classify(model(c)).of(ROOT / "c/include/c.hpp") == Owner("c", public=True)
 
 
+def test_build_directory_inside_the_source_tree_is_claimed_only_by_listing() -> None:
+    top = target(
+        "top",
+        type="STATIC_LIBRARY",
+        source_dir=ROOT,
+        sources=[ROOT / "build/generated.cpp"],
+    )
+    owners = classify(model(top, build_dir=ROOT / "build"))
+
+    assert owners.of(ROOT / "build/lib/verify/a.hpp.cxx") is None
+    assert owners.of(ROOT / "build/generated.cpp") == Owner("top", public=False)
+    assert owners.of(ROOT / "top.hpp") == Owner("top", public=False)
+
+
 def test_imported_and_utility_targets_own_nothing() -> None:
     ext = target("ext", imported=True, sources=[ROOT / "ext/e.hpp"])
     util = target("util", type="UTILITY", sources=[ROOT / "util/u.txt"])
