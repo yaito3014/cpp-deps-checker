@@ -9,6 +9,7 @@ target_link_libraries(
     PRIVATE
         cpp_deps_checker_tidy_cache
         cpp_deps_checker::includes
+        cpp_deps_checker::rules
         cpp_deps_checker_llvm
 )
 
