@@ -24,6 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       # LLVM 24 is not released yet: the development snapshot from apt.llvm.org.
+      # clang-tidy and clangd load the plugin in its tests.
       - name: Install LLVM 24
         run: |
           . /etc/os-release
@@ -32,7 +33,8 @@ jobs:
           echo "deb https://apt.llvm.org/$VERSION_CODENAME/ llvm-toolchain-$VERSION_CODENAME main" |
             sudo tee /etc/apt/sources.list.d/llvm.list >/dev/null
           sudo apt-get update -q
-          sudo apt-get install -y -q llvm-24-dev libclang-24-dev libclang-cpp24-dev libclang-common-24-dev
+          sudo apt-get install -y -q llvm-24-dev libclang-24-dev libclang-cpp24-dev libclang-common-24-dev \
+            clang-tidy-24 clangd-24
       - name: Set up vcpkg
         run: |
           root=$RUNNER_TEMP/vcpkg
