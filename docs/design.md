@@ -147,7 +147,7 @@ reason = "required; why the rule is broken here"
 
 ## Structure
 
-Each feature is a CMake target, and the `target_link_libraries` graph is the dependency manifest; it must stay acyclic. The core has no LLVM dependency; only the targets under `clang/` link Clang.
+Each feature is a CMake target, and the `target_link_libraries` graph is the dependency manifest; it must stay acyclic. The core has no LLVM dependency; only the targets under `clang/` and `cli/collect` link Clang.
 
 ```
 core/
@@ -155,12 +155,12 @@ core/
   ownership/  # Model -> file owners and kinds, test and external targets
   rules/      # Context -> violations; also the per-include check for the plugin
 cli/
+  collect/    # libTooling run over compile_commands.json
   report/     # text, GitHub annotations, job summary, Mermaid graph
   main        # composition root of the command line
 clang/
   llvm/       # LLVM's include directories and definitions, as a target
   includes/   # PPCallbacks -> include records, shared by the collector and the plugin
-  collect/    # libTooling run over compile_commands.json (used by cli)
   tidy/       # clang-tidy module, loaded by clang-tidy --load and clangd --load
     cache/    # rule context per build directory, reloaded per configure
 testing/      # test support: configures fixtures through action/configure.sh
@@ -173,11 +173,11 @@ The one design decision each target hides:
 - `rules`: the policy of each rule. `rules` owns the include record and the `rules::context` it checks, so the collectors depend on `rules`, not the other way round.
 - `report`: output formats and CI annotation syntax.
 - `clang/includes`: how includes are read from Clang (which callbacks, physical line from the hash location).
-- `clang/collect`: how translation units are run in-process (libTooling over the compilation database); it knows nothing about targets, and takes keep and skip predicates instead.
+- `cli/collect`: how translation units are run in-process (libTooling over the compilation database); it knows nothing about targets, and takes keep and skip predicates instead.
 - `clang/tidy`: how the checks run inside clang-tidy and clangd (registration, the build directory of a translation unit, where diagnostics go).
 - `clang/tidy/cache`: when a build directory's rule context is loaded again.
 
-Allowed edges, in topological order: `model`; `ownership` -> `model`; `rules` -> `ownership`, `model`; `report` -> `rules`, `model`; `clang/includes` -> `rules`; `clang/collect` -> `clang/includes`; `clang/tidy/cache` -> `rules`, `model`; `clang/tidy` -> `clang/tidy/cache`, `clang/includes`, `rules`; the command line -> everything but `clang/tidy`. `testing` -> `model` (it builds projects by hand), and only tests link it.
+Allowed edges, in topological order: `model`; `ownership` -> `model`; `rules` -> `ownership`, `model`; `report` -> `rules`, `model`; `clang/includes` -> `rules`; `cli/collect` -> `clang/includes`; `clang/tidy/cache` -> `rules`, `model`; `clang/tidy` -> `clang/tidy/cache`, `clang/includes`, `rules`; the command line -> everything but `clang/tidy`. `testing` -> `model` (it builds projects by hand), and only tests link it.
 
 Rules need more than the model: rules 3 and 4 need include edges, and rules 4 to 7 need the test targets. `rules` therefore owns `rules::context` (the project, the includes, the failed header set verification TUs, the owners, and the test and external targets) and `rules::violation`. `rules::check(ctx)` runs every rule, and `rules::check_include` runs rules 3 and 4 on one include for the plugin. The command line builds the context from `model`, `collect`, and `ownership`. Exceptions from the consumer config will be applied once, after all rules run, not inside each rule.
 
@@ -191,7 +191,7 @@ Tests come first, with Catch2, per target. Each rule has fixture CMake projects 
 
 - C++23, set with `target_compile_features`; CMake with FILE_SET public headers per target.
 - vcpkg for third-party libraries: glaze (JSON; needs C++23, built and tested by its authors with Clang 19+ and GCC 13+), CLI11 for the command line's arguments, and Catch2 for unit tests. A usage error exits 2.
-- LLVM 24 from the system (`find_package(LLVM 24 CONFIG)`), not vcpkg, and its `clang-cpp` library found next to it; Clang's own CMake package is not used, because on apt.llvm.org it also requires MLIR's. Only the `clang/` targets link them, for the plugin and the command line alike. libTooling finds Clang's builtin headers relative to `libclang-cpp`, so translation units get LLVM 24's whatever compiler their compile command names. Until LLVM 24 is released, CI installs apt.llvm.org's development snapshot.
+- LLVM 24 from the system (`find_package(LLVM 24 CONFIG)`), not vcpkg, and its `clang-cpp` library found next to it; Clang's own CMake package is not used, because on apt.llvm.org it also requires MLIR's. Only the `clang/` targets and `cli/collect` link them, for the plugin and the command line alike. libTooling finds Clang's builtin headers relative to `libclang-cpp`, so translation units get LLVM 24's whatever compiler their compile command names. Until LLVM 24 is released, CI installs apt.llvm.org's development snapshot.
 
 ## Plugin
 
