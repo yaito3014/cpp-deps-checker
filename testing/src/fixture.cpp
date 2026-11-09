@@ -1,10 +1,10 @@
 #include <cpp_deps_checker/testing/fixture.hpp>
 
+#include <unistd.h>
 #include <atomic>
 #include <cstdlib>
 #include <format>
 #include <stdexcept>
-#include <unistd.h>
 #include <vector>
 
 namespace cpp_deps_checker::testing {

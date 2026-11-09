@@ -161,9 +161,7 @@ std::expected<fs::path, load_error> current_index(fs::path const& reply_dir)
     }
   }
   if (!current) {
-    return std::unexpected{
-        error(load_error_kind::missing, std::format("no File API reply in {}; configure with a codemodel-v2 query", reply_dir.string()))
-    };
+    return std::unexpected{error(load_error_kind::missing, std::format("no File API reply in {}; configure with a codemodel-v2 query", reply_dir.string()))};
   }
   if (current->second.filename().string().starts_with("error-")) {
     return std::unexpected{error(load_error_kind::stale, std::format("the last configure failed ({})", current->second.string()))};

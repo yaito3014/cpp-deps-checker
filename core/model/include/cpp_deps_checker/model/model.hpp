@@ -65,7 +65,7 @@ struct target {
   std::vector<dependency> interface_link_libraries;
   std::vector<dependency> interface_compile_dependencies;
   // Paths below are absolute and canonical.
-  std::filesystem::path source_dir;  // directory whose CMakeLists.txt defines the target
+  std::filesystem::path source_dir;            // directory whose CMakeLists.txt defines the target
   std::vector<std::filesystem::path> sources;  // sources in no file set
   std::vector<file_set> file_sets;
   // For a target CMake creates to verify another target's interface header
