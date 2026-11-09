@@ -1,7 +1,7 @@
 #include <cpp_deps_checker/cli/cli.hpp>
 #include <cpp_deps_checker/collect/collect.hpp>
+#include <cpp_deps_checker/config/config.hpp>
 #include <cpp_deps_checker/model/model.hpp>
-#include <cpp_deps_checker/ownership/ownership.hpp>
 #include <cpp_deps_checker/report/report.hpp>
 #include <cpp_deps_checker/rules/rules.hpp>
 
@@ -61,6 +61,22 @@ struct options {
   return std::string{std::istreambuf_iterator<char>{in}, {}};
 }
 
+// The context of project, configured by the config file in its source
+// directory.
+[[nodiscard]] std::expected<rules::context, std::string> configured(model::project project)
+{
+  auto const config_file = project.source_dir() / config::file_name;
+  auto const settings = config::load(project.source_dir());
+  if (!settings) {
+    return std::unexpected{settings.error()};
+  }
+  auto ctx = rules::make_context(std::move(project), *settings);
+  if (!ctx) {
+    return std::unexpected{std::format("{}: {}", config_file.string(), ctx.error())};
+  }
+  return ctx;
+}
+
 // Every rule's input; without compile_commands there are no includes. A
 // translation unit that fails to preprocess is a violation if it verifies a
 // header set, and unusable input otherwise.
@@ -72,7 +88,11 @@ struct options {
   if (!project) {
     return std::unexpected{project.error().message};
   }
-  auto ctx = rules::make_context(*std::move(project));
+  auto made = configured(*std::move(project));
+  if (!made) {
+    return made;
+  }
+  auto& ctx = *made;
   if (!compile_commands) {
     return ctx;
   }
@@ -101,7 +121,7 @@ struct options {
   }
   ctx.includes = std::move(collection->includes);
   ctx.failures = std::move(collection->failures);
-  return ctx;
+  return made;
 }
 
 [[nodiscard]] int check(options const& opts, std::ostream& out, std::ostream& err)
@@ -153,11 +173,15 @@ struct options {
 
 [[nodiscard]] int graph(options const& opts, std::ostream& out, std::ostream& err)
 {
-  auto const project = model::load(opts.build_dir, opts.trace_or_default());
+  auto project = model::load(opts.build_dir, opts.trace_or_default());
   if (!project) {
     return unusable(err, project.error().message);
   }
-  auto const text = report::mermaid(report::make_graph(*project, ownership::find_tests(*project), ownership::find_external(*project)));
+  auto const ctx = configured(*std::move(project));
+  if (!ctx) {
+    return unusable(err, ctx.error());
+  }
+  auto const text = report::mermaid(report::make_graph(ctx->project, ctx->tests, ctx->external));
   if (opts.output) {
     if (!written(*opts.output, text, std::ios::out)) {
       return unusable(err, std::format("cannot write {}", opts.output->string()));
