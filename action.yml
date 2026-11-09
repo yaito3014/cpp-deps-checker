@@ -36,7 +36,7 @@ runs:
       uses: actions/cache/restore@v6.1.0
       with:
         path: ${{ runner.temp }}/cpp-deps-checker-bin
-        key: cpp-deps-checker-${{ runner.os }}-${{ steps.versions.outputs.llvm }}-${{ steps.versions.outputs.sources }}
+        key: cpp-deps-checker-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.llvm }}-${{ steps.versions.outputs.sources }}
     - name: Install LLVM 24
       shell: sh
       env:
