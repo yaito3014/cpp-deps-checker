@@ -5,6 +5,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace cpp_deps_checker::testing {
 
@@ -28,6 +29,18 @@ private:
 // Runs argv through the shell, each argument quoted; throws std::runtime_error
 // if the command does not exit with status 0.
 void run(std::span<std::string const> argv);
+
+struct process_result {
+  int status;
+  std::string out;
+  std::string err;
+};
+
+// Runs argv in directory with environment added to the inherited one, and
+// returns its exit status and output.
+[[nodiscard]] process_result run_captured(
+    std::span<std::string const> argv, std::filesystem::path const& directory, std::span<std::pair<std::string, std::string> const> environment = {}
+);
 
 struct build {
   std::filesystem::path dir;
