@@ -275,3 +275,26 @@ TEST_CASE("help exits 0")
   CHECK(r.status == 0);
   CHECK_THAT(r.out, ContainsSubstring("check"));
 }
+
+TEST_CASE("a graph that cannot be written fails")
+{
+  temporary_directory const dir;
+  auto const build = configured("definition_order_late", dir);
+  auto const output = dir.path() / "missing" / "graph.md";
+
+  auto const r = run({"graph", build.dir.string(), "--output", output.string()});
+
+  CHECK(r.status == 2);
+  CHECK_THAT(r.err, ContainsSubstring(output.string()));
+}
+
+TEST_CASE("a summary that cannot be written fails, even when the check is clean")
+{
+  temporary_directory const dir;
+  auto const build = configured("definition_order_imported", dir);
+
+  auto const r = run({"check", build.dir.string(), "--summary", dir.path().string()});
+
+  CHECK(r.status == 2);
+  CHECK_THAT(r.err, ContainsSubstring(dir.path().string()));
+}

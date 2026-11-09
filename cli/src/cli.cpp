@@ -42,6 +42,16 @@ struct options {
   return 2;
 }
 
+// Writes text to file in mode; false if the file could not be opened or
+// written, or did not close cleanly.
+[[nodiscard]] bool written(fs::path const& file, std::string_view text, std::ios::openmode mode)
+{
+  std::ofstream stream{file, mode};
+  stream << text;
+  stream.close();
+  return !stream.fail();
+}
+
 [[nodiscard]] std::expected<std::string, std::string> read(fs::path const& file)
 {
   std::ifstream in{file};
@@ -134,7 +144,9 @@ struct options {
       new_edges.emplace();
       std::ranges::set_difference(edges, baseline->edges, std::back_inserter(*new_edges));
     }
-    std::ofstream{*opts.summary, std::ios::app} << report::summary(violations, ctx->project.source_dir(), root, new_edges);
+    if (!written(*opts.summary, report::summary(violations, ctx->project.source_dir(), root, new_edges), std::ios::app)) {
+      return unusable(err, std::format("cannot write {}", opts.summary->string()));
+    }
   }
   return std::ranges::contains(violations, rules::level::error, &rules::violation::level) ? 1 : 0;
 }
@@ -147,7 +159,9 @@ struct options {
   }
   auto const text = report::mermaid(report::make_graph(*project, ownership::find_tests(*project), ownership::find_external(*project)));
   if (opts.output) {
-    std::ofstream{*opts.output} << text;
+    if (!written(*opts.output, text, std::ios::out)) {
+      return unusable(err, std::format("cannot write {}", opts.output->string()));
+    }
   } else {
     out << text;
   }
