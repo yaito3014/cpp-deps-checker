@@ -1,0 +1,2 @@
+# exit status: 1
+app/CMakeLists.txt:2: error: app links test target test_helper; only test targets may link it [test-isolation]

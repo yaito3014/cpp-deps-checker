@@ -1,0 +1,2 @@
+# exit status: 1
+b/b.cpp:2: error: b includes b/a/include/a/detail/impl.hpp, a detail header of a; only a and test targets may include it [entry-point]

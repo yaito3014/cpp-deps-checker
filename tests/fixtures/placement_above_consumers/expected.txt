@@ -1,0 +1,2 @@
+# exit status: 0
+lexer/CMakeLists.txt:1: warning: every path to lexer goes through parser; move lexer under parser/ [placement]

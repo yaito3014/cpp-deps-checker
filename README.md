@@ -54,4 +54,6 @@ uvx --from shellcheck-py shellcheck action/*.sh
 uvx --from actionlint-py actionlint
 ```
 
+Each fixture's `expected.txt` holds the exit status and standard output of `check` on it. `CPP_DEPS_CHECKER=<command> uv run pytest tests/test_expected.py` checks another implementation against them.
+
 The workflows' action dependencies are locked in `.github/workflows/actions.lock`. After changing a `uses:` line in a workflow or in `action.yml`, regenerate it with `gh actions-lock` (the `github/gh-actions-lock` extension).
