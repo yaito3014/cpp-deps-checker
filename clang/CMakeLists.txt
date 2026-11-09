@@ -19,3 +19,4 @@ target_link_libraries(cpp_deps_checker_llvm INTERFACE "${CPP_DEPS_CHECKER_CLANG_
 
 add_subdirectory(includes)
 add_subdirectory(collect)
+add_subdirectory(tidy)
