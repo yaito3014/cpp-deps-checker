@@ -1,3 +1,4 @@
+import functools
 import json
 import re
 import shlex
@@ -17,6 +18,8 @@ _ESCAPE = re.compile(r"\\(.)")
 # An include directive that `clang -E -dI` kept in its output.
 _DIRECTIVE = re.compile(r"^#(?:include|include_next|import) .* /\* clang -E -dI \*/$")
 _ERROR = re.compile(r"^(.+):(\d+):\d+: (?:fatal )?error: (.+)$")
+# #line, or its GNU form `# 12 "file"`, in source text.
+_RENUMBERING = re.compile(r"^[ \t]*#[ \t]*(?:line\b|[0-9])", re.MULTILINE)
 
 
 class IncludeError(Exception):
@@ -162,14 +165,18 @@ def directive_lines(
     edges: Sequence[_Edge],
     directives: Sequence[Directive],
     error: Diagnostic | None,
+    renumbers: Callable[[Path], bool] = lambda _: False,
 ) -> list[int | None]:
     """The line of each edge from parse_tree, paired in order with the
     directive that made it.
 
     The directive at the location of the translation unit's first error is
-    left out, since -H prints nothing for a header it did not find. If the
-    two sequences still disagree on a count, an includer, or an entered
-    header, no edge gets a line rather than a wrong one.
+    left out, since -H prints nothing for a header it did not find. An edge
+    whose includer renumbers its lines (#line) gets no line, since line
+    markers carry the renumbered lines, and is paired without comparing
+    includers, since #line may also rename the file. If the two sequences
+    still disagree on a count, an includer, or an entered header, no edge
+    gets a line rather than a wrong one.
     """
     if error is not None:
         directives = [
@@ -178,11 +185,22 @@ def directive_lines(
             if d.entered is not None or (d.includer, d.line) != (error.file, error.line)
         ]
     if len(directives) != len(edges) or any(
-        d.includer != includer or d.entered not in {None, included}
+        (d.includer != includer and not renumbers(includer))
+        or d.entered not in {None, included}
         for d, (includer, included) in zip(directives, edges, strict=True)
     ):
         return [None] * len(edges)
-    return [d.line for d in directives]
+    return [
+        None if renumbers(includer) else d.line
+        for d, (includer, _) in zip(directives, edges, strict=True)
+    ]
+
+
+@functools.cache
+def _renumbers(path: Path) -> bool:
+    """Whether the file may renumber its lines, even in a comment or a branch
+    that is not compiled."""
+    return _RENUMBERING.search(path.read_text(errors="replace")) is not None
 
 
 def _preprocess_arguments(entry: dict[str, Any]) -> list[str]:
@@ -225,11 +243,14 @@ def _preprocess(entry: dict[str, Any]) -> tuple[list[Include], Failure | None]:
     edges = parse_tree(result.stderr, source, directory)
     error = _first_error(result.stderr, directory)
     directives, forced_includes = parse_directives(result.stdout, directory)
-    lines = directive_lines(edges, directives, error)
+    lines = directive_lines(edges, directives, error, _renumbers)
     includes = [
         Include(includer, included, line)
         for (includer, included), line in zip(edges, lines, strict=True)
-    ] + forced_includes
+    ] + [
+        Include(i.includer, i.included, None) if _renumbers(i.includer) else i
+        for i in forced_includes
+    ]
     if result.returncode == 0:
         return includes, None
     failure = Failure(

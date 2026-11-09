@@ -317,3 +317,37 @@ def test_headers_included_with_the_include_option(tmp_path: Path) -> None:
     assert collection.includes == tuple(
         sorted([Include(m, a, None), Include(a, b, 3), Include(m, c, 1)])
     )
+
+
+@pytest.mark.parametrize(
+    "remap", ["#line 100\n", '# 50 "m.cpp"\n', '#line 7 "other.cpp"\n']
+)
+def test_no_line_in_a_file_that_renumbers_its_lines(tmp_path: Path, remap: str) -> None:
+    (tmp_path / "inc").mkdir()
+    (tmp_path / "inc/a.hpp").write_text(_guarded("a.hpp", '#include "b.hpp"\n'))
+    (tmp_path / "inc/b.hpp").write_text(_guarded("b.hpp"))
+    (tmp_path / "m.cpp").write_text(remap + '#include "a.hpp"\n')
+    root = tmp_path.resolve()
+    m, a, b = root / "m.cpp", root / "inc/a.hpp", root / "inc/b.hpp"
+
+    collection = collect(_commands(tmp_path, "m.cpp"), keep=lambda _: True)
+
+    # Line markers carry the renumbered lines, which are not where the
+    # directive is; a.hpp does not renumber, so its line stays.
+    assert collection.includes == tuple(sorted([Include(m, a, None), Include(a, b, 3)]))
+
+
+def test_no_line_in_an_include_option_header_that_renumbers(tmp_path: Path) -> None:
+    (tmp_path / "inc").mkdir()
+    (tmp_path / "inc/a.hpp").write_text('#line 40\n#include "b.hpp"\n')
+    (tmp_path / "inc/b.hpp").write_text(_guarded("b.hpp"))
+    (tmp_path / "m.cpp").write_text("")
+    root = tmp_path.resolve()
+    m, a, b = root / "m.cpp", root / "inc/a.hpp", root / "inc/b.hpp"
+    commands = _commands(tmp_path, "m.cpp", flags=("-include", "a.hpp"))
+
+    collection = collect(commands, keep=lambda _: True)
+
+    assert collection.includes == tuple(
+        sorted([Include(m, a, None), Include(a, b, None)])
+    )
