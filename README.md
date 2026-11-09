@@ -53,4 +53,4 @@ uvx --from shellcheck-py shellcheck action/*.sh
 uvx --from actionlint-py actionlint
 ```
 
-The workflows' action dependencies are locked in `.github/workflows/actions.lock`. After changing a `uses:` line, here or in `action.yml`, regenerate it with `gh actions-lock` (the `github/gh-actions-lock` extension).
+The workflows' action dependencies are locked in `.github/workflows/actions.lock`. After changing a `uses:` line in a workflow or in `action.yml`, regenerate it with `gh actions-lock` (the `github/gh-actions-lock` extension).
