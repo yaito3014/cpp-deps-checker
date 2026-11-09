@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <format>
 #include <fstream>
+#include <ios>
 #include <iterator>
 #include <ranges>
 #include <string_view>
@@ -36,7 +37,14 @@ std::expected<config, std::string> load(std::filesystem::path const& source_dir)
   if (!in) {
     return std::unexpected{std::format("cannot read {}", file.string())};
   }
-  std::string const text{std::istreambuf_iterator<char>{in}, {}};
+  // A directory opens, then fails to read, and libstdc++'s filebuf throws on a
+  // read error.
+  std::string text;
+  try {
+    text.assign(std::istreambuf_iterator<char>{in}, {});
+  } catch (std::ios_base::failure const& error) {
+    return std::unexpected{std::format("cannot read {}: {}", file.string(), error.what())};
+  }
   config result;
   if (!has_content(text)) {
     return result;

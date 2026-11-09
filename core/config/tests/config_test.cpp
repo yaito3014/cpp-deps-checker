@@ -96,3 +96,14 @@ TEST_CASE("a value of the wrong type is an error")
 
   CHECK_FALSE(config::load(dir.path()));
 }
+
+TEST_CASE("a config path that cannot be read is an error naming it")
+{
+  temporary_directory const dir;
+  fs::create_directory(dir.path() / config::file_name);
+
+  auto const result = config::load(dir.path());
+
+  REQUIRE_FALSE(result);
+  CHECK_THAT(result.error(), ContainsSubstring((dir.path() / config::file_name).string()));
+}
