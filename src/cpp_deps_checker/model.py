@@ -1,4 +1,5 @@
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -6,6 +7,9 @@ from typing import Any
 
 type _Json = dict[str, Any]
 type _Site = tuple[Path, int, str]  # file, line, target name
+
+# Most trace lines are other commands; this cheap test skips their parsing.
+_DEFINING = re.compile(r"add_(?:library|executable)", re.IGNORECASE)
 
 
 class ReplyError(Exception):
@@ -168,6 +172,8 @@ def _trace_order(trace: Path) -> dict[_Site, int]:
     order: dict[_Site, int] = {}
     with trace.open() as lines:
         for position, line in enumerate(lines):
+            if _DEFINING.search(line) is None:
+                continue
             entry = json.loads(line)
             if entry.get("cmd", "").lower() in {"add_library", "add_executable"}:
                 site = (Path(entry["file"]).resolve(), entry["line"], entry["args"][0])
