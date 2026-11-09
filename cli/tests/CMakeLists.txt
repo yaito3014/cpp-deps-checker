@@ -6,6 +6,7 @@ target_link_libraries(
     cpp_deps_checker_cli_test
     PRIVATE
         cpp_deps_checker::cli
+        cpp_deps_checker::model
         cpp_deps_checker::ownership
         cpp_deps_checker::report
         cpp_deps_checker::testing

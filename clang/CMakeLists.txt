@@ -10,13 +10,9 @@ find_library(
     REQUIRED
 )
 
-# LLVM's exported targets carry no include directories or definitions.
-add_library(cpp_deps_checker_llvm INTERFACE)
-target_include_directories(cpp_deps_checker_llvm SYSTEM INTERFACE ${LLVM_INCLUDE_DIRS})
-separate_arguments(CPP_DEPS_CHECKER_LLVM_DEFINITIONS NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(cpp_deps_checker_llvm INTERFACE ${CPP_DEPS_CHECKER_LLVM_DEFINITIONS})
-target_link_libraries(cpp_deps_checker_llvm INTERFACE "${CPP_DEPS_CHECKER_CLANG_CPP}" LLVM)
-
+# In a directory of its own: a target defined here would make every target
+# below private to clang/ (rule 5), and the command line links collect.
+add_subdirectory(llvm)
 add_subdirectory(includes)
 add_subdirectory(collect)
 add_subdirectory(tidy)
