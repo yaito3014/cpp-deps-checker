@@ -137,7 +137,7 @@ def find_external(model: Model) -> frozenset[str]:
 
 
 def classify(model: Model) -> Owners:
-    # Imported targets' files are an open decision (docs/design.md); custom
+    # External targets' files are an open decision (docs/design.md); custom
     # targets are not code; a header set verification target shares the
     # source directory of the target it verifies and compiles only generated
     # files.
