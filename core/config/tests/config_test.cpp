@@ -65,6 +65,38 @@ TEST_CASE("every key is read")
   CHECK(result->tests->names == std::vector<std::string>{"*_test"});
 }
 
+TEST_CASE("exceptions are read with the keys each one gives")
+{
+  temporary_directory const dir;
+  write_config(
+      dir.path(),
+      "exceptions:\n"
+      "  - rule: direct-layering\n"
+      "    from: app\n"
+      "    to: logging\n"
+      "    reason: logging is moving behind a facade\n"
+      "  - rule: placement\n"
+      "    target: util\n"
+      "    reason: loaded by plugins\n"
+      "  - rule: no-cycles\n"
+      "    targets: [a, b]\n"
+      "    reason: legacy\n"
+  );
+
+  auto const result = config::load(dir.path());
+
+  REQUIRE(result);
+  REQUIRE(result->exceptions);
+  CHECK(
+      *result->exceptions
+      == std::vector<config::exception>{
+          {.rule = "direct-layering", .from = "app", .to = "logging", .reason = "logging is moving behind a facade"},
+          {.rule = "placement", .target = "util", .reason = "loaded by plugins"},
+          {.rule = "no-cycles", .targets = std::vector<std::string>{"a", "b"}, .reason = "legacy"},
+      }
+  );
+}
+
 TEST_CASE("an omitted key stays unset")
 {
   temporary_directory const dir;

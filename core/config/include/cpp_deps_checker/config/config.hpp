@@ -20,9 +20,24 @@ struct tests_config {
   std::optional<std::vector<std::string>> names;        // target name patterns
 };
 
+// A violation the project allows. from, to, target, and targets hold target
+// names; which of them an exception needs depends on its rule, and the rules
+// check that. An omitted rule or reason is empty.
+struct exception {
+  std::string rule;
+  std::optional<std::string> from;
+  std::optional<std::string> to;
+  std::optional<std::string> target;
+  std::optional<std::vector<std::string>> targets;
+  std::string reason;
+
+  friend bool operator==(exception const&, exception const&) = default;
+};
+
 struct config {
   std::optional<std::vector<std::string>> composition_roots;  // target names
   std::optional<tests_config> tests;
+  std::optional<std::vector<exception>> exceptions;
 };
 
 // The config file in source_dir; no file is an empty config.

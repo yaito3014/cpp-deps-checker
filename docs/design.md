@@ -35,7 +35,7 @@ Definitions used by the rules:
 - **External target.** A target whose code is not the project's: an imported target, or one defined outside the top-level source directory or inside a build directory nested in it, which is where FetchContent puts fetched sources. A dependency added with `add_subdirectory` from inside the source tree, and anything fetched by an in-source build (build directory equal to the source directory), are not recognized. `FetchContent_MakeAvailable()` turns header set verification off while it runs (cmake-variables(7), `CMAKE_VERIFY_INTERFACE_HEADER_SETS`), so fetched targets have no verification targets; an out-of-tree `add_subdirectory` can still bring some in, hence the rule 3a exemption.
 - **Production target.** A target that is not external, not a test target, and not a header set verification target.
 - **Production graph.** The declared edges between production targets. Unless the consumer config names the composition roots, every production target that no other production target links is one.
-- **Exceptions.** A rule may be broken only through an entry in the consumer config, and every entry must carry a `reason`.
+- **Exceptions.** A rule may be broken only through an entry in the consumer config, and every entry must carry a `reason` (see Packaging and configuration).
 
 ## Inputs
 
@@ -138,9 +138,18 @@ composition_roots: [app]
 tests:
   directories: ["**/tests/**", "**/test/**"]  # the default
   names: []                                   # the default
+exceptions:
+  - rule: direct-layering
+    from: app
+    to: logging
+    reason: logging moves behind a facade (#42)
+  - {rule: placement, target: util, reason: loaded by plugins}
+  - {rule: no-cycles, targets: [a, b], reason: legacy}
 ```
 
-An unknown key, a value of the wrong type, or a composition root that names no production target makes the input unusable: `check` and `graph` exit 2, and the plugin warns once per configure or config change. Exceptions, each with a reason, are planned.
+An exception allows every violation of its rule among the targets it names: `from` and `to` for the rules about an edge or an include between two targets (`definition-order`, `direct-layering`, `entry-point`, `nesting`, `test-isolation`), `target` for the rules about one target (`self-contained`, `placement`), and `targets` for `no-cycles`, matched against the exact set of targets in the cycle's strongly connected component. Exceptions name targets rather than files or lines, so they survive edits inside a target and track the target graph: an exception that allows no violation is a `stale-exception` warning at the config file, without a line, since glaze gives no positions for YAML values (decided 2026-11-10, a warning rather than an error). It is not reported for an include rule (3, 3a, 4) when no compilation database was read, because those rules did not run, nor by the plugin, which sees one include at a time.
+
+An unknown key, a value of the wrong type, a composition root that names no production target, or an exception with an unknown rule, the wrong keys for its rule, a name no target has, or no reason makes the input unusable: `check` and `graph` exit 2, and the plugin warns once per configure or config change.
 
 ## Structure
 
@@ -178,7 +187,7 @@ The one design decision each target hides:
 
 Allowed edges, in topological order: `config`; `model`; `rules/ownership` -> `model`; `rules` -> `config`, `rules/ownership`, `model`; `report` -> `rules`, `model`; `clang/includes` -> `rules`; `cli/collect` -> `clang/includes`; `clang/tidy/cache` -> `rules`, `config`, `model`; `clang/tidy` -> `clang/tidy/cache`, `clang/includes`, `rules`; the command line -> everything but `clang/tidy` and `rules/ownership`, which it reaches through the rule context. `testing` -> `model` (it builds projects by hand), and only tests link it.
 
-Rules need more than the model: rules 3 and 4 need include edges, and rules 4 to 7 need the test targets. `rules` therefore owns `rules::context` (the project, the includes, the failed header set verification TUs, the owners, and the test and external targets) and `rules::violation`. `rules::check(ctx)` runs every rule, and `rules::check_include` runs rules 3 and 4 on one include for the plugin. `rules::make_context` applies the config to a project, with the defaults for what it leaves unset; the command line builds the context from `model`, `config`, `rules`, and `collect`. Exceptions from the consumer config will be applied once, after all rules run, not inside each rule.
+Rules need more than the model: rules 3 and 4 need include edges, and rules 4 to 7 need the test targets. `rules` therefore owns `rules::context` (the project, the includes, the failed header set verification TUs, the owners, the test and external targets, and the exceptions) and `rules::violation`. `rules::check(ctx)` runs every rule, and `rules::check_include` runs rules 3 and 4 on one include for the plugin. `rules::make_context` applies the config to a project, with the defaults for what it leaves unset; the command line builds the context from `model`, `config`, `rules`, and `collect`. `rules::check` applies the config's exceptions once, after all rules run, not inside each rule: each rule records with a violation the targets an exception names to allow it. `rules::check_include` applies them too, without reporting stale ones.
 
 The declared-edges definition is computed by the model (`target::declared_dependencies`), because which File API fields hold edges is the model's hidden decision.
 
@@ -213,6 +222,7 @@ Open decisions:
 
 - [x] Graph output: a CI artifact, Mermaid in Markdown (decided 2026-11-08, over a committed docs file). The new-edge baseline therefore comes from configuring the base branch a second time on every pull request, and a base branch that does not configure leaves the new edges unlisted.
 - [x] Config file name and format: `.cpp-deps-checker.yaml` (decided 2026-11-10).
+- [x] Exceptions: matched by rule and target names; a stale exception warns (decided 2026-11-10).
 - [ ] Several targets per directory. Rule 5 is unaffected (the parent is a directory). Rule 6 accepts a target in the same directory as its dominator, so a target that should be nested in a subdirectory but shares its dominator's directory is not reported; tightening this to "strictly below" would warn on every multi-target directory.
 - [ ] Multi-config generators: which configuration the check reads.
 - [ ] Owner of an external target's headers (rule 3). For a fetched target the reply lists the files, but owning them would also apply rule 4: Catch2 lists its headers as sources of a static library, so they would count as private and every test including them would fail. The reply has no include directories for imported targets. Candidates: (a) inject a script through `CMAKE_PROJECT_INCLUDE` that walks the directories' `IMPORTED_TARGETS` and writes each target's `INTERFACE_INCLUDE_DIRECTORIES` with `file(GENERATE)`, a fourth input, unverified; (b) match consumer `compileGroups` include paths to `linkLibraries` entries by backtrace, ambiguous when one call links several imported targets; (c) drop imported targets from rule 3.

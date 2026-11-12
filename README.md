@@ -33,7 +33,13 @@ composition_roots: [app]  # target names
 tests:
   directories: ["**/tests/**", "**/test/**"]  # globs of the defining CMakeLists.txt path
   names: ["*_test"]                           # target name patterns
+exceptions:  # violations the project allows, each with a reason
+  - {rule: direct-layering, from: app, to: logging, reason: "logging moves behind a facade (#42)"}
+  - {rule: placement, target: util, reason: loaded by plugins}
+  - {rule: no-cycles, targets: [a, b], reason: legacy}
 ```
+
+An exception allows every violation of its rule among the targets it names, by target name: `from` and `to` for `definition-order`, `direct-layering`, `entry-point`, `nesting`, and `test-isolation`; `target` for `self-contained` and `placement`; and for `no-cycles`, `targets`, the exact set of targets in the cycle. An exception that allows nothing is a `stale-exception` warning at the config file, except one for an include rule when the include rules are skipped. The plugin applies the exceptions too, but does not warn about stale ones.
 
 [action/configure.sh](action/configure.sh) `SOURCE_DIR BUILD_DIR [CMAKE_ARG...]` runs the same configure; the Action and the tests use it.
 
