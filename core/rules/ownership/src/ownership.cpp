@@ -1,7 +1,9 @@
 #include <cpp_deps_checker/ownership/ownership.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <ranges>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -156,6 +158,46 @@ template<class T>
   return full_match(segments, pattern_segments);
 }
 
+// A file a translation unit may include, by its extension.
+[[nodiscard]] bool is_header(fs::path const& file)
+{
+  static constexpr std::string_view extensions[]{".h", ".hh", ".hpp", ".hxx", ".h++", ".inl", ".ipp", ".tpp", ".tcc"};
+  auto extension = file.extension().string();
+  std::ranges::transform(extension, extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return std::ranges::contains(extensions, extension);
+}
+
+// Whether a header under target's source directory belongs to no other target;
+// a directory that cannot be read may hold one.
+[[nodiscard]] bool may_own_a_header(model::target const& target, owners const& owners, std::optional<fs::path> const& build)
+{
+  if (!fs::exists(target.source_dir)) {
+    return false;
+  }
+  std::error_code ec;
+  for (fs::recursive_directory_iterator it{target.source_dir, ec}, end; it != end; it.increment(ec)) {
+    if (ec) {
+      return true;
+    }
+    auto const& path = it->path();
+    std::error_code type_error;
+    if (it->is_directory(type_error)) {
+      if ((build && path == *build) || path.filename().string().starts_with('.')) {
+        it.disable_recursion_pending();
+      }
+      continue;
+    }
+    if (!is_header(path)) {
+      continue;
+    }
+    auto const owner = owners.of(path);
+    if (!owner || owner->target == target.id) {
+      return true;
+    }
+  }
+  return static_cast<bool>(ec);
+}
+
 }  // namespace
 
 owners::owners(
@@ -260,6 +302,19 @@ owners classify(model::project const& project)
     base_directories.emplace_back(*build, std::nullopt);
   }
   return owners{indexed(listed), indexed(base_directories), indexed(source_directories)};
+}
+
+std::set<std::string> find_umbrellas(model::project const& project, owners const& owners, std::set<std::string> const& external)
+{
+  auto const build = nested_build_dir(project);
+  std::set<std::string> result;
+  for (auto const& target : project.targets()) {
+    if (target.type == "INTERFACE_LIBRARY" && target.sources.empty() && target.file_sets.empty() && !external.contains(target.id)
+        && !may_own_a_header(target, owners, build)) {
+      result.insert(target.id);
+    }
+  }
+  return result;
 }
 
 std::set<std::string> find_tests(model::project const& project, std::span<std::string_view const> directories, std::span<std::string_view const> names)

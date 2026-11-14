@@ -1,8 +1,11 @@
 #include <cpp_deps_checker/ownership/ownership.hpp>
 #include <cpp_deps_checker/testing/factories.hpp>
+#include <cpp_deps_checker/testing/fixture.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <filesystem>
+#include <fstream>
 #include <set>
 #include <string>
 #include <string_view>
@@ -387,4 +390,75 @@ TEST_CASE("a target at the top level has CMakeLists.txt as its path")
   auto const p = project({target("top", {.source_dir = root})});
   std::string_view const top_level[]{"CMakeLists.txt"};
   CHECK(find_tests(p, top_level) == std::set<std::string>{"top"});
+}
+
+// Umbrella targets
+
+namespace {
+
+namespace fs = std::filesystem;
+
+void touch(fs::path const& file)
+{
+  fs::create_directories(file.parent_path());
+  std::ofstream{file};
+}
+
+std::set<std::string> umbrellas_of(std::vector<model::target> targets, fs::path const& top)
+{
+  auto const p = model::project{std::move(targets), top, top / "build"};
+  return ownership::find_umbrellas(p, classify(p), find_external(p));
+}
+
+}  // namespace
+
+TEST_CASE("an interface library that owns no header only links other targets")
+{
+  testing::temporary_directory const dir;
+  auto const top = fs::canonical(dir.path());
+  touch(top / "CMakeLists.txt");
+  touch(top / "all.cpp");
+  touch(top / "core/include/core/core.hpp");
+  touch(top / "build/generated.hpp");
+  touch(top / ".git/hooks/sample.h");
+
+  auto const umbrellas = umbrellas_of(
+      {
+          target("all", {.source_dir = top, .links = {"core"}}),
+          target("core", {.source_dir = top / "core"}),
+      },
+      top
+  );
+
+  CHECK(umbrellas == std::set<std::string>{"all"});
+}
+
+TEST_CASE("an umbrella is an interface library of the project without sources or file sets")
+{
+  testing::temporary_directory const dir;
+  auto const top = fs::canonical(dir.path());
+
+  auto const umbrellas = umbrellas_of(
+      {
+          target("all", {.source_dir = top / "all"}),
+          target("static", {.type = "STATIC_LIBRARY", .source_dir = top / "static"}),
+          target("listed", {.source_dir = top / "listed", .sources = {top / "listed/a.cpp"}}),
+          target("abstract", {.source_dir = top / "abstract", .file_sets = {headers("INTERFACE", {}, {top / "abstract/include"})}}),
+          target("imported", {.imported = true, .source_dir = top / "imported"}),
+      },
+      top
+  );
+
+  CHECK(umbrellas == std::set<std::string>{"all"});
+}
+
+TEST_CASE("a header no target owns keeps an interface library from being an umbrella")
+{
+  testing::temporary_directory const dir;
+  auto const top = fs::canonical(dir.path());
+  touch(top / "json/include/json/json.HPP");
+
+  auto const umbrellas = umbrellas_of({target("json", {.source_dir = top / "json"}), target("json_all", {.source_dir = top / "json"})}, top);
+
+  CHECK(umbrellas.empty());
 }

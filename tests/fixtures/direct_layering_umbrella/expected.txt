@@ -1,0 +1,2 @@
+# exit status: 1
+a/a.cpp:2: error: a includes a/old/d/include/d/d.hpp of d without linking d directly [direct-layering]
