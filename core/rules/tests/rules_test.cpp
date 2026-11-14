@@ -253,6 +253,81 @@ TEST_CASE("includes that follow the links are clean")
   CHECK(of_rule("entry-point", violations).empty());
 }
 
+namespace {
+
+// app (app/app.cpp) and lib (public header lib/include/lib/lib.hpp) link
+// through all, which links mid, which links core; json, which owns a header,
+// links core too.
+rules::context umbrella_context(std::vector<rules::include> includes, std::string_view lib_link = "PRIVATE")
+{
+  auto const linking = [](model::target t, std::string const& id, std::string_view visibility = "PRIVATE") {
+    t.link_libraries = t.compile_dependencies = {{id, std::nullopt}};
+    if (visibility == "PUBLIC" || t.type == "INTERFACE_LIBRARY") {
+      t.interface_link_libraries = t.interface_compile_dependencies = {{id, std::nullopt}};
+    }
+    if (t.type == "INTERFACE_LIBRARY") {
+      t.link_libraries = t.compile_dependencies = {};
+    }
+    return t;
+  };
+  auto const core = target("core", {.file_sets = {headers("INTERFACE", {root / "core/include/core/core.hpp"}, {root / "core/include"})}});
+  auto const json = target("json", {.file_sets = {headers("INTERFACE", {root / "json/include/json/json.hpp"}, {root / "json/include"})}});
+  auto const lib = target(
+      "lib", {.type = "STATIC_LIBRARY",
+              .sources = {root / "lib/lib.cpp"},
+              .file_sets = {headers("PUBLIC", {root / "lib/include/lib/lib.hpp"}, {root / "lib/include"})}}
+  );
+  auto ctx = rules::make_context(
+      testing::project({
+          core,
+          linking(json, "core"),
+          linking(target("mid"), "core"),
+          linking(target("all"), "mid"),
+          linking(lib, "all", lib_link),
+          linking(target("app", {.type = "EXECUTABLE", .sources = {root / "app/app.cpp"}}), "all"),
+          linking(target("json_app", {.type = "EXECUTABLE", .sources = {root / "json_app/main.cpp"}}), "json"),
+      })
+  );
+  ctx.includes = std::move(includes);
+  return ctx;
+}
+
+}  // namespace
+
+TEST_CASE("linking an umbrella target counts as linking what it links")
+{
+  auto const ctx = umbrella_context({{root / "app/app.cpp", root / "core/include/core/core.hpp", 1}});
+  REQUIRE(ctx.umbrellas == std::set<std::string>{"all", "mid"});
+
+  CHECK(of_rule("direct-layering", rules::check(ctx)).empty());
+}
+
+TEST_CASE("a public header reaches through an umbrella only if it is linked PUBLIC")
+{
+  rules::include const directive{root / "lib/include/lib/lib.hpp", root / "core/include/core/core.hpp", 1};
+
+  CHECK(of_rule("direct-layering", rules::check(umbrella_context({directive}, "PUBLIC"))).empty());
+  CHECK(
+      of_rule("direct-layering", rules::check(umbrella_context({directive})))
+      == std::vector<rules::violation>{
+          {"direct-layering", level::error, "public header of lib includes core/include/core/core.hpp of core, which lib links PRIVATE; link it PUBLIC",
+           at("lib/include/lib/lib.hpp", 1)},
+      }
+  );
+}
+
+TEST_CASE("a target that owns a header does not pass on what it links")
+{
+  auto const ctx = umbrella_context({{root / "json_app/main.cpp", root / "core/include/core/core.hpp", 1}});
+
+  CHECK(
+      of_rule("direct-layering", rules::check(ctx))
+      == std::vector<rules::violation>{
+          {"direct-layering", level::error, "json_app includes core/include/core/core.hpp of core without linking core directly", at("json_app/main.cpp", 1)},
+      }
+  );
+}
+
 TEST_CASE("including another target's private header")
 {
   auto const ctx = includes_context({{root / "tests/a_test.cpp", root / "a/src/impl.hpp", 4}});
