@@ -78,6 +78,9 @@ struct context {
   ownership::owners owners;
   std::set<std::string> tests;     // ids of test targets
   std::set<std::string> external;  // ids of targets whose code is not the project's
+  // Ids of interface libraries that own no header and only link other targets;
+  // for rule 3, linking one counts as linking what it links.
+  std::set<std::string> umbrellas;
   // Ids; unset, every production target that no production target links is one.
   std::optional<std::vector<std::string>> composition_roots;
   std::vector<exception> exceptions;

@@ -62,6 +62,13 @@ private:
 
 [[nodiscard]] owners classify(model::project const& project);
 
+// Ids of the umbrella targets: interface libraries of the project, without
+// sources or file sets, under whose source directory every header belongs to
+// another target, so that they only link other targets. Reads the file
+// system; a header is a file with a header extension, and the build directory
+// and hidden directories are not searched.
+[[nodiscard]] std::set<std::string> find_umbrellas(model::project const& project, owners const& owners, std::set<std::string> const& external);
+
 inline constexpr std::string_view default_test_directories[]{"**/tests/**", "**/test/**"};
 
 // Ids of the test targets: those defined by a CMakeLists.txt whose path,

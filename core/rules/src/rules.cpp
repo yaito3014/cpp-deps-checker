@@ -201,9 +201,24 @@ void definition_order(context const& ctx, std::vector<finding>& out)
 
 // Rule 3: direct layering.
 
-[[nodiscard]] bool depends_on(std::vector<model::dependency> const& field, std::string const& id)
+// Whether field has id, directly or through the umbrella targets it reaches.
+[[nodiscard]] bool depends_on(context const& ctx, std::vector<model::dependency> const& field, std::string const& id)
 {
-  return std::ranges::contains(field, id, &model::dependency::target);
+  std::set<std::string> seen;
+  std::vector<std::vector<model::dependency> const*> pending{&field};
+  while (!pending.empty()) {
+    auto const* dependencies = pending.back();
+    pending.pop_back();
+    for (auto const& dependency : *dependencies) {
+      if (dependency.target == id) {
+        return true;
+      }
+      if (ctx.umbrellas.contains(dependency.target) && seen.insert(dependency.target).second) {
+        pending.push_back(&ctx.project.find(dependency.target)->interface_compile_dependencies);
+      }
+    }
+  }
+  return false;
 }
 
 [[nodiscard]] std::optional<finding> direct_layering(context const& ctx, include const& directive)
@@ -218,13 +233,13 @@ void definition_order(context const& ctx, std::vector<finding>& out)
   auto const header = located(ctx.project, directive.included);
   std::string message;
   if (includer->is_public) {
-    if (depends_on(consumer.interface_compile_dependencies, dependency.id)) {
+    if (depends_on(ctx, consumer.interface_compile_dependencies, dependency.id)) {
       return std::nullopt;
     }
-    auto const how = depends_on(consumer.compile_dependencies, dependency.id) ? "links PRIVATE" : "does not link";
+    auto const how = depends_on(ctx, consumer.compile_dependencies, dependency.id) ? "links PRIVATE" : "does not link";
     message = std::format("public header of {} includes {} of {}, which {} {}; link it PUBLIC", consumer.name, header, dependency.name, consumer.name, how);
   } else {
-    if (depends_on(consumer.compile_dependencies, dependency.id)) {
+    if (depends_on(ctx, consumer.compile_dependencies, dependency.id)) {
       return std::nullopt;
     }
     message = std::format("{} includes {} of {} without linking {} directly", consumer.name, header, dependency.name, dependency.name);
@@ -681,7 +696,8 @@ std::expected<context, std::string> make_context(model::project project, config:
   auto owners = ownership::classify(project);
   auto tests = ownership::find_tests(project, directories, names);
   auto external = ownership::find_external(project);
-  context ctx{std::move(project), {}, {}, std::move(owners), std::move(tests), std::move(external), std::nullopt, {}};
+  auto umbrellas = ownership::find_umbrellas(project, owners, external);
+  context ctx{std::move(project), {}, {}, std::move(owners), std::move(tests), std::move(external), std::move(umbrellas), std::nullopt, {}};
   if (settings.composition_roots) {
     auto const production = ctx.production();
     auto& roots = ctx.composition_roots.emplace();
